@@ -52,7 +52,8 @@ function handleExcelErr(e: any) {
 export async function adminUpdateBookingStatus(
     _id: string,
     bookingNumber: string,
-    status: "pending" | "confirmed" | "completed" | "cancelled"
+    status: "pending" | "confirmed" | "completed" | "cancelled",
+    cancellationReason?: string
 ) {
     try {
         const wb = readBookingsWorkbook();
@@ -63,7 +64,13 @@ export async function adminUpdateBookingStatus(
         const records = xlsx.utils.sheet_to_json(ws) as any[];
 
         const idx = records.findIndex((r) => r["Booking Number"] === bookingNumber);
-        if (idx !== -1) records[idx]["Status"] = status;
+        if (idx !== -1) {
+            records[idx]["Status"] = status;
+            if (status === "cancelled" && cancellationReason) {
+                records[idx]["Cancellation Reason"] = cancellationReason;
+            }
+            records[idx]["Updated At"] = new Date().toISOString();
+        }
 
         const newWs = xlsx.utils.json_to_sheet(records);
         wb.Sheets[sheetName] = newWs;
@@ -78,9 +85,9 @@ export async function adminUpdateBookingStatus(
 }
 
 /** Soft-cancel — keeps row, sets status to cancelled AND applies red font color in Excel */
-export async function adminCancelBooking(bookingNumber: string) {
+export async function adminCancelBooking(bookingNumber: string, reason: string) {
     // First update the status in the xlsx records
-    const result = await adminUpdateBookingStatus("", bookingNumber, "cancelled");
+    const result = await adminUpdateBookingStatus("", bookingNumber, "cancelled", reason);
     if (!result.success) return result;
 
     // Then apply red color using exceljs
@@ -109,6 +116,85 @@ export async function adminCancelBooking(bookingNumber: string) {
     revalidatePath("/admin/bookings");
     revalidatePath("/admin");
     return { success: true };
+}
+
+/** Re-activate a cancelled booking */
+export async function adminReactivateBooking(bookingNumber: string) {
+    try {
+        const wb = readBookingsWorkbook();
+        if (!wb) return { success: false, error: "No bookings file found." };
+
+        const sheetName = "Bookings";
+        const ws = wb.Sheets[sheetName];
+        const records = xlsx.utils.sheet_to_json(ws) as any[];
+
+        const idx = records.findIndex((r) => r["Booking Number"] === bookingNumber);
+        if (idx === -1) return { success: false, error: "Booking not found." };
+
+        records[idx]["Status"] = "pending";
+        records[idx]["Updated At"] = new Date().toISOString();
+        records[idx]["Notes"] = (records[idx]["Notes"] || "") + ` [Reactivated on ${new Date().toLocaleDateString()}]`;
+
+        const newWs = xlsx.utils.json_to_sheet(records);
+        wb.Sheets[sheetName] = newWs;
+        writeWorkbook(wb);
+
+        // Reset color in Excel
+        try {
+            const ExcelJS = (await import("exceljs")).default;
+            const wbE = new ExcelJS.Workbook();
+            await wbE.xlsx.readFile(bookingsFile);
+            const wsE = wbE.getWorksheet("Bookings");
+            if (wsE) {
+                wsE.eachRow((row, rowNumber) => {
+                    if (rowNumber === 1) return;
+                    const cell = row.getCell(1);
+                    if (cell.value === bookingNumber || String(cell.value).includes(bookingNumber)) {
+                        row.eachCell((c) => {
+                            c.font = { color: { argb: "FF000000" }, bold: false };
+                        });
+                    }
+                });
+                await wbE.xlsx.writeFile(bookingsFile);
+            }
+        } catch (e) { }
+
+        revalidatePath("/admin/bookings");
+        revalidatePath("/admin");
+        return { success: true };
+    } catch (e: any) {
+        return handleExcelErr(e);
+    }
+}
+
+/** Reschedule a booking */
+export async function adminRescheduleBooking(bookingNumber: string, newDate: string, newTime: string) {
+    try {
+        const wb = readBookingsWorkbook();
+        if (!wb) return { success: false, error: "No bookings file found." };
+
+        const sheetName = "Bookings";
+        const ws = wb.Sheets[sheetName];
+        const records = xlsx.utils.sheet_to_json(ws) as any[];
+
+        const idx = records.findIndex((r) => r["Booking Number"] === bookingNumber);
+        if (idx === -1) return { success: false, error: "Booking not found." };
+
+        records[idx]["Date"] = newDate;
+        records[idx]["Time"] = newTime;
+        records[idx]["Status"] = "confirmed";
+        records[idx]["Updated At"] = new Date().toISOString();
+
+        const newWs = xlsx.utils.json_to_sheet(records);
+        wb.Sheets[sheetName] = newWs;
+        writeWorkbook(wb);
+
+        revalidatePath("/admin/bookings");
+        revalidatePath("/admin");
+        return { success: true };
+    } catch (e: any) {
+        return handleExcelErr(e);
+    }
 }
 
 /** Hard delete — permanently removes the row from Excel */
@@ -188,11 +274,74 @@ export async function adminDeleteService(id: string) {
     }
 }
 
+/** Availability Blocks ─────────────────────────────────────────────── */
+
+const blocksFile = path.join(process.cwd(), "availability_blocks.json");
+
+export async function getAvailabilityBlocks() {
+    if (fs.existsSync(blocksFile)) {
+        try {
+            return JSON.parse(fs.readFileSync(blocksFile, "utf-8"));
+        } catch (e) {
+            return { holidays: [], blocked_slots: [] };
+        }
+    }
+    return { holidays: [], blocked_slots: [] };
+}
+
+export async function addAvailabilityBlock(block: any) {
+    try {
+        const blocks = await getAvailabilityBlocks();
+        const newBlock = {
+            ...block,
+            id: `block-${Date.now()}`,
+            created_at: new Date().toISOString(),
+        };
+
+        if (block.type === "full-day") {
+            blocks.holidays.push(newBlock);
+        } else {
+            blocks.blocked_slots.push(newBlock);
+        }
+
+        fs.writeFileSync(blocksFile, JSON.stringify(blocks, null, 2));
+        revalidatePath("/admin/availability");
+        revalidatePath("/");
+        revalidatePath("/services");
+        return { success: true };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+export async function deleteAvailabilityBlock(id: string, type: "full-day" | "partial") {
+    try {
+        const blocks = await getAvailabilityBlocks();
+        if (type === "full-day") {
+            blocks.holidays = blocks.holidays.filter((b: any) => b.id !== id);
+        } else {
+            blocks.blocked_slots = blocks.blocked_slots.filter((b: any) => b.id !== id);
+        }
+
+        fs.writeFileSync(blocksFile, JSON.stringify(blocks, null, 2));
+        revalidatePath("/admin/availability");
+        revalidatePath("/");
+        revalidatePath("/services");
+        return { success: true };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
 /** Returns all bookings for the admin dashboard and calendar */
 export async function getAllBookings() {
-    const wb = readBookingsWorkbook();
-    if (!wb) return [];
-    const ws = wb.Sheets["Bookings"];
-    if (!ws) return [];
-    return xlsx.utils.sheet_to_json(ws) as any[];
+    try {
+        const wb = readBookingsWorkbook();
+        if (!wb) return [];
+        const ws = wb.Sheets["Bookings"];
+        if (!ws) return [];
+        return xlsx.utils.sheet_to_json(ws) as any[];
+    } catch (e) {
+        return [];
+    }
 }

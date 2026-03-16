@@ -4,6 +4,8 @@ import * as xlsx from "xlsx";
 import fs from "fs";
 import path from "path";
 
+import { getAvailableTimeSlots } from "@/lib/bookingLogic";
+
 const EXCEL_FILE = path.join(process.cwd(), "bookings_export.xlsx");
 
 function readWorkbook() {
@@ -36,6 +38,17 @@ function generateBookingNumber(): string {
     return `pt-${String(max + 1).padStart(4, "0")}`;
 }
 
+/** Returns detailed available slots (including reasons for blocks) */
+export async function getAvailableSlotsAction(dateStr: string, durationHours: number) {
+    if (!dateStr) return [];
+    try {
+        const booked = await getBookedSlotsForDate(dateStr);
+        return getAvailableTimeSlots(new Date(dateStr), durationHours, booked);
+    } catch (e) {
+        return [];
+    }
+}
+
 /** Returns booked {time, duration} for a specific date (excluding cancelled) */
 export async function getBookedSlotsForDate(
     dateStr: string
@@ -59,8 +72,10 @@ export async function submitBooking(data: {
     car_brand: string;
     car_model: string;
     car_year: string;
-    service_id: string;
-    service_name: string;
+    service_id?: string;
+    service_name?: string;
+    service_ids?: string[];
+    service_names_snapshot?: string[];
     booking_date: string;
     booking_time: string;
     duration_hours: number;
@@ -68,7 +83,19 @@ export async function submitBooking(data: {
     notes: string;
 }) {
     try {
+        // Server-side check against manual blocks AND existing bookings
+        const booked = await getBookedSlotsForDate(data.booking_date);
+        const available = getAvailableTimeSlots(new Date(data.booking_date), data.duration_hours, booked);
+        const slot = available.find(s => s.time === data.booking_time || s.time === "Full Day");
+
+        if (!slot || slot.status === "blocked") {
+            const reason = slot?.reason || "This slot is no longer available.";
+            return { success: false, error: `UNAVAILABLE: ${reason}` };
+        }
+
         const booking_number = generateBookingNumber();
+
+        const serviceNames = data.service_name || (data.service_names_snapshot ? data.service_names_snapshot.join(", ") : "Manual Entry");
 
         const rowDetails = {
             "Booking Number": booking_number,
@@ -77,7 +104,7 @@ export async function submitBooking(data: {
             Customer: data.customer_name,
             Phone: data.customer_phone,
             Car: `${data.car_brand} ${data.car_model} (${data.car_year})`,
-            Services: data.service_name,
+            Services: serviceNames,
             "Total Price": data.total_price,
             "Duration (hrs)": data.duration_hours,
             Status: "pending",

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Wrench, CalendarCheck, LogOut } from "lucide-react";
+import { LayoutDashboard, Wrench, CalendarCheck, LogOut, CalendarClock } from "lucide-react";
 import { adminLogout } from "@/app/actions/auth";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -22,6 +22,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const navItems = [
         { label: "Overview", icon: LayoutDashboard, href: "/admin" },
         { label: "Bookings", icon: CalendarCheck, href: "/admin/bookings" },
+        { label: "Schedule Control", icon: CalendarClock, href: "/admin/availability" },
         { label: "Services Catalog", icon: Wrench, href: "/admin/services" },
     ];
 

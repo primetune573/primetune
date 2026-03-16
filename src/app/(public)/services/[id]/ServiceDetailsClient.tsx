@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Clock, CalendarIcon, ShieldAlert, CheckCircle2, PhoneCall, MessageCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { MotionDiv, fadeIn } from "@/components/animated/MotionDiv";
-import { submitBooking, getBookedSlotsForDate } from "@/app/actions/booking";
+import { submitBooking, getAvailableSlotsAction } from "@/app/actions/booking";
 
 const CATEGORIES = ["Maintenance", "Performance", "Engine", "Emergency"];
 
@@ -57,8 +57,8 @@ export default function ServiceDetailsClient({ service }: { service: any }) {
     const todayStr = new Date().toISOString().split("T")[0];
 
     const [dateStr, setDateStr] = useState("");
-    const [selectedSlot, setSelectedSlot] = useState<number | null>(null); // start hour
-    const [bookedSlots, setBookedSlots] = useState<{ time: string; duration: number }[]>([]);
+    const [selectedSlot, setSelectedSlot] = useState<string | null>(null); // time string
+    const [availableSlots, setAvailableSlots] = useState<any[]>([]);
     const [slotsLoading, setSlotsLoading] = useState(false);
 
     // Booking form state
@@ -75,51 +75,27 @@ export default function ServiceDetailsClient({ service }: { service: any }) {
     const fetchSlots = useCallback(async (date: string) => {
         setSlotsLoading(true);
         try {
-            const slots = await getBookedSlotsForDate(date);
-            setBookedSlots(slots);
+            const slots = await getAvailableSlotsAction(date, service.duration_hours || 1);
+            setAvailableSlots(slots);
         } catch {
-            setBookedSlots([]);
+            setAvailableSlots([]);
         } finally {
             setSlotsLoading(false);
         }
-    }, []);
+    }, [service.duration_hours]);
 
     const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setDateStr(e.target.value);
+        const val = e.target.value;
+        setDateStr(val);
         setSelectedSlot(null);
-        if (e.target.value) fetchSlots(e.target.value);
+        if (val) fetchSlots(val);
     };
-
-    const isFriday = dateStr && new Date(dateStr).getDay() === 5;
-
-    // Build available slots for the selected date and duration
-    const availableSlots = (() => {
-        if (!dateStr || isFriday) return [];
-        const dur = service.duration_hours || 1;
-        const maxStart = CLOSING_HOUR - dur;
-        const now = new Date();
-        const today = now.toISOString().split("T")[0];
-        const slots: number[] = [];
-        for (let h = OPENING_HOUR; h <= maxStart; h++) {
-            // If today, enforce at least 1h from now
-            if (dateStr === today) {
-                const slotTime = new Date();
-                slotTime.setHours(h, 0, 0, 0);
-                const minTime = new Date(now.getTime() + 60 * 60 * 1000);
-                if (slotTime < minTime) continue;
-            }
-            if (!isSlotConflicting(h, dur, bookedSlots)) {
-                slots.push(h);
-            }
-        }
-        return slots;
-    })();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError("");
 
-        if (!dateStr || selectedSlot === null) {
+        if (!dateStr || !selectedSlot) {
             setError("Please select a date and time slot.");
             return;
         }
@@ -132,12 +108,6 @@ export default function ServiceDetailsClient({ service }: { service: any }) {
             return;
         }
 
-        const slotLabel = formatSlotRange(selectedSlot, service.duration_hours || 1);
-        // Format for backend as "8:00 AM" style
-        const hourAmpm = selectedSlot >= 12 ? "PM" : "AM";
-        const displayHour = selectedSlot > 12 ? selectedSlot - 12 : selectedSlot === 0 ? 12 : selectedSlot;
-        const timeStr = `${displayHour}:00 ${hourAmpm}`;
-
         setSubmitting(true);
         try {
             const res = await submitBooking({
@@ -149,7 +119,7 @@ export default function ServiceDetailsClient({ service }: { service: any }) {
                 service_id: service.id,
                 service_name: service.name,
                 booking_date: dateStr,
-                booking_time: timeStr,
+                booking_time: selectedSlot,
                 duration_hours: service.duration_hours || 1,
                 total_price: service.price || 0,
                 notes,
@@ -165,7 +135,9 @@ export default function ServiceDetailsClient({ service }: { service: any }) {
             }
 
             // Success: open WhatsApp
-            const waMsg = `*New Booking — PrimeTune Automotive*\n\n*Booking ID:* ${res.booking_number}\n*Service:* ${service.name}\n*Date:* ${dateStr}\n*Time:* ${slotLabel}\n\n*Customer:* ${name}\n*Phone:* ${phone}\n*Vehicle:* ${carBrand} ${carModel} (${carYear})\n\n*Total:* LKR ${service.price?.toLocaleString()}\n\n_Notes: ${notes || "None"}_`;
+            const slotObj = availableSlots.find(s => s.time === selectedSlot);
+            const timeRange = slotObj?.range || selectedSlot;
+            const waMsg = `*New Booking — PrimeTune Automotive*\n\n*Booking ID:* ${res.booking_number}\n*Service:* ${service.name}\n*Date:* ${dateStr}\n*Time:* ${timeRange}\n\n*Customer:* ${name}\n*Phone:* ${phone}\n*Vehicle:* ${carBrand} ${carModel} (${carYear})\n\n*Total:* LKR ${service.price?.toLocaleString()}\n\n_Notes: ${notes || "None"}_`;
             window.open(`https://wa.me/94775056573?text=${encodeURIComponent(waMsg)}`, "_blank");
 
             setSuccess(res.booking_number || "Booking confirmed!");
@@ -177,29 +149,30 @@ export default function ServiceDetailsClient({ service }: { service: any }) {
     return (
         <div className="flex flex-col w-full pb-24 bg-background">
             {/* Header Banner */}
-            <section className="relative h-64 md:h-96 w-full flex items-end overflow-hidden">
-                <div className="absolute inset-0 bg-black/40 z-10" />
+            <section className="relative h-72 md:h-[450px] w-full flex items-end overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent z-10" />
+                <div className="absolute inset-0 bg-black/40 z-[5]" />
                 {service.image ? (
-                    <img src={service.image} alt={service.name} referrerPolicy="no-referrer" className="absolute inset-0 w-full h-full object-cover" />
+                    <img src={service.image} alt={service.name} referrerPolicy="no-referrer" className="absolute inset-0 w-full h-full object-cover scale-105" />
                 ) : (
                     <div className="absolute inset-0 bg-secondary" />
                 )}
-                <div className="container mx-auto px-4 relative z-20 pb-8 max-w-7xl">
-                    <Link href="/services" className="inline-flex items-center text-white/80 hover:text-white font-medium mb-4 transition-colors">
-                        <ArrowLeft className="w-4 h-4 mr-2" /> Back to Services
+                <div className="container mx-auto px-4 relative z-20 pb-10 max-w-7xl">
+                    <Link href="/services" className="inline-flex items-center text-white/90 hover:text-white font-bold text-sm mb-6 transition-all hover:-translate-x-1 group">
+                        <ArrowLeft className="w-4 h-4 mr-2 group-hover:scale-125 transition-transform" /> Back to Catalog
                     </Link>
                     <MotionDiv initial="hidden" animate="visible" variants={fadeIn}>
-                        <div className="flex gap-2 items-center mb-2">
-                            <span className="bg-primary px-3 py-1 rounded-full text-xs font-bold text-white tracking-wider uppercase">
+                        <div className="flex flex-wrap gap-2 items-center mb-4">
+                            <span className="bg-primary/90 backdrop-blur-md px-4 py-1.5 rounded-full text-[10px] font-black text-white tracking-[0.2em] uppercase shadow-lg shadow-primary/20">
                                 {service.category || "General"}
                             </span>
                             {service.emergency && (
-                                <span className="bg-destructive px-3 py-1 rounded-full text-xs font-bold text-white flex items-center gap-1">
-                                    <ShieldAlert className="w-3 h-3" /> Emergency
+                                <span className="bg-destructive/90 backdrop-blur-md px-4 py-1.5 rounded-full text-[10px] font-black text-white flex items-center gap-1.5 tracking-[0.2em] uppercase shadow-lg shadow-destructive/20 border border-white/10 animate-pulse">
+                                    <ShieldAlert className="w-3.5 h-3.5" /> Emergency
                                 </span>
                             )}
                         </div>
-                        <h1 className="text-4xl md:text-5xl font-extrabold text-white tracking-tight drop-shadow-lg">
+                        <h1 className="text-4xl md:text-6xl font-black text-white tracking-tighter drop-shadow-2xl leading-tight">
                             {service.name}
                         </h1>
                     </MotionDiv>
@@ -250,113 +223,175 @@ export default function ServiceDetailsClient({ service }: { service: any }) {
 
                     {/* Right: Booking Form */}
                     <div className="lg:col-span-1">
-                        <MotionDiv initial="hidden" animate="visible" variants={fadeIn} className="bg-card border border-border p-6 rounded-2xl shadow-xl sticky top-24">
+                        <MotionDiv
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.2 }}
+                            className="bg-card border border-border p-8 rounded-3xl shadow-2xl sticky top-24 overflow-hidden group/form"
+                        >
+                            {/* Decorative top bar */}
+                            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-primary via-red-500 to-orange-500" />
+
                             {success ? (
-                                <div className="text-center py-6">
-                                    <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                                    <h3 className="text-xl font-bold text-foreground mb-2">Booking Confirmed!</h3>
-                                    <p className="text-muted-foreground text-sm mb-1">Your Booking ID:</p>
-                                    <p className="text-2xl font-black text-primary mb-4">{success}</p>
-                                    <p className="text-sm text-muted-foreground mb-6">WhatsApp has been opened with your booking details. We will confirm your appointment shortly.</p>
-                                    <Link href="/services" className="inline-flex items-center gap-2 bg-primary hover:bg-red-700 text-white px-6 py-3 rounded-xl font-bold transition-colors">
+                                <div className="text-center py-10 space-y-6">
+                                    <div className="relative inline-block">
+                                        <div className="absolute inset-0 bg-green-500/20 blur-2xl rounded-full scale-150 animate-pulse" />
+                                        <CheckCircle2 className="w-20 h-20 text-green-500 relative z-10" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-2xl font-black text-foreground">Booking Confirmed!</h3>
+                                        <p className="text-muted-foreground text-sm mt-2">Your dedicated service ID:</p>
+                                        <div className="mt-3 py-2 px-4 bg-muted/50 rounded-xl border border-border inline-block">
+                                            <p className="text-3xl font-black text-primary tracking-tighter">{success}</p>
+                                        </div>
+                                    </div>
+                                    <p className="text-sm text-muted-foreground leading-relaxed">
+                                        WhatsApp has been opened with your booking details. Our lead mechanic will confirm your appointment shortly.
+                                    </p>
+                                    <Link href="/services" className="w-full inline-flex items-center justify-center gap-2 bg-primary hover:bg-red-700 text-white py-4 rounded-2xl font-black transition-all hover:scale-105 active:scale-95 shadow-xl shadow-primary/20">
                                         Book Another Service
                                     </Link>
                                 </div>
                             ) : (
                                 <>
-                                    <div className="mb-5">
-                                        <h3 className="text-primary font-bold text-2xl">LKR {service.price?.toLocaleString()}</h3>
-                                        <p className="text-muted-foreground text-sm mt-1 flex items-center gap-1">
-                                            <Clock className="w-4 h-4" /> Est. {service.duration_hours} hour{service.duration_hours !== 1 ? "s" : ""}
-                                        </p>
+                                    <div className="mb-8">
+                                        <div className="flex justify-between items-end">
+                                            <div>
+                                                <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-1">Service Fee</p>
+                                                <h3 className="text-4xl font-black text-foreground tracking-tighter">LKR {service.price?.toLocaleString()}</h3>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-1">Estimated Time</p>
+                                                <p className="text-sm font-bold text-foreground flex items-center justify-end gap-1.5">
+                                                    <Clock className="w-4 h-4 text-primary" /> {service.duration_hours} Hour{service.duration_hours !== 1 ? "s" : ""}
+                                                </p>
+                                            </div>
+                                        </div>
                                     </div>
 
-                                    <form onSubmit={handleSubmit} className="space-y-4">
-                                        {/* Date picker */}
-                                        <div>
-                                            <label className="block text-sm font-bold text-foreground mb-1.5 flex items-center gap-2">
-                                                <CalendarIcon className="w-4 h-4 text-primary" /> Select Date
-                                            </label>
-                                            <input
-                                                type="date"
-                                                min={todayStr}
-                                                value={dateStr}
-                                                onChange={handleDateChange}
-                                                required
-                                                className="w-full bg-input border border-border rounded-lg px-4 py-2.5 text-foreground focus:ring-2 focus:ring-primary outline-none transition-all text-sm"
-                                            />
-                                            {isFriday && <p className="text-destructive text-xs mt-1 flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> We are closed on Fridays.</p>}
+                                    <form onSubmit={handleSubmit} className="space-y-6">
+                                        {/* Date selection */}
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-black uppercase tracking-widest text-muted-foreground ml-1">Appointment Date</label>
+                                            <div className="relative">
+                                                <CalendarIcon className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-primary" />
+                                                <input
+                                                    type="date"
+                                                    min={todayStr}
+                                                    value={dateStr}
+                                                    onChange={handleDateChange}
+                                                    required
+                                                    className="w-full bg-secondary/50 border border-border rounded-2xl pl-11 pr-4 py-3.5 text-foreground focus:ring-2 focus:ring-primary/30 outline-none transition-all text-sm font-bold"
+                                                />
+                                            </div>
                                         </div>
 
-                                        {/* Time slot grid */}
-                                        <div>
-                                            <label className="block text-sm font-bold text-foreground mb-1.5 flex items-center gap-2">
-                                                <Clock className="w-4 h-4 text-primary" /> Available Time Slots
-                                            </label>
+                                        {/* Slot selection */}
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-black uppercase tracking-widest text-muted-foreground ml-1">Available Windows</label>
                                             {!dateStr ? (
-                                                <p className="text-xs text-muted-foreground bg-secondary/50 p-3 rounded-lg text-center border border-border/50">
-                                                    Select a date to see slots.
-                                                </p>
+                                                <div className="bg-muted/30 border border-dashed border-border rounded-2xl p-6 text-center">
+                                                    <Clock className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+                                                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em]">Select a date above</p>
+                                                </div>
                                             ) : slotsLoading ? (
-                                                <p className="text-xs text-muted-foreground text-center py-3"><Loader2 className="w-4 h-4 animate-spin inline mr-1" />Loading...</p>
+                                                <div className="flex items-center justify-center py-6">
+                                                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                                                </div>
                                             ) : availableSlots.length === 0 ? (
-                                                <p className="text-xs text-destructive bg-red-500/10 p-3 rounded-lg text-center border border-red-500/20">
-                                                    {isFriday ? "Closed on Fridays." : "No available slots for this date."}
-                                                </p>
+                                                <div className="bg-red-500/5 border border-red-500/10 rounded-2xl p-6 text-center">
+                                                    <p className="text-[10px] font-black text-red-500 uppercase tracking-[0.1em]">No slots available</p>
+                                                </div>
+                                            ) : availableSlots[0].time === "Full Day" ? (
+                                                <div className="bg-destructive/10 border border-destructive/20 rounded-2xl p-6 text-center">
+                                                    <ShieldAlert className="w-8 h-8 text-destructive mx-auto mb-2" />
+                                                    <p className="text-[10px] font-black text-destructive uppercase tracking-widest mb-1">Closed for the day</p>
+                                                    <p className="text-sm font-bold text-foreground">{availableSlots[0].reason || "Garage Unavailable"}</p>
+                                                </div>
                                             ) : (
-                                                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
-                                                    {availableSlots.map(h => (
-                                                        <button
-                                                            key={h}
-                                                            type="button"
-                                                            onClick={() => setSelectedSlot(h)}
-                                                            className={`py-2 px-2 rounded-md text-xs font-semibold transition-all border text-center ${selectedSlot === h
-                                                                ? "bg-primary text-white border-primary shadow-md"
-                                                                : "bg-background text-foreground border-border hover:border-primary/50 hover:bg-secondary"
-                                                                }`}
-                                                        >
-                                                            {formatSlotRange(h, service.duration_hours || 1)}
-                                                        </button>
-                                                    ))}
+                                                <div className="grid grid-cols-1 gap-3 max-h-64 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-primary/20">
+                                                    {availableSlots.map(slot => {
+                                                        const isBlocked = slot.status === "blocked";
+                                                        return (
+                                                            <button
+                                                                key={slot.time}
+                                                                type="button"
+                                                                disabled={isBlocked}
+                                                                onClick={() => setSelectedSlot(slot.time)}
+                                                                className={`group relative py-4 px-5 rounded-2xl transition-all border text-left flex items-center justify-between ${selectedSlot === slot.time
+                                                                    ? "bg-primary text-white border-primary shadow-xl shadow-primary/30 scale-[0.98]"
+                                                                    : isBlocked
+                                                                        ? "bg-secondary/30 text-muted-foreground/40 border-border/50 cursor-not-allowed"
+                                                                        : "bg-background text-foreground border-border hover:border-primary/50 hover:bg-secondary/80 shadow-sm"
+                                                                    }`}
+                                                            >
+                                                                <div className="flex flex-col">
+                                                                    <span className="text-xs font-black uppercase tracking-tighter mb-0.5 opacity-60">Time Window</span>
+                                                                    <span className="text-sm font-black tracking-tight font-sans">
+                                                                        {slot.range}
+                                                                    </span>
+                                                                </div>
+
+                                                                {isBlocked ? (
+                                                                    <div className="text-right flex flex-col items-end">
+                                                                        <span className="text-[9px] font-black text-destructive uppercase tracking-widest bg-destructive/10 px-2 py-0.5 rounded-full mb-1">Blocked</span>
+                                                                        <span className="text-[10px] font-bold text-muted-foreground italic max-w-[100px] truncate">
+                                                                            {slot.reason}
+                                                                        </span>
+                                                                    </div>
+                                                                ) : selectedSlot === slot.time ? (
+                                                                    <CheckCircle2 className="w-5 h-5 text-white" />
+                                                                ) : (
+                                                                    <Clock className="w-4 h-4 text-primary/40 group-hover:text-primary transition-colors" />
+                                                                )}
+                                                            </button>
+                                                        );
+                                                    })}
                                                 </div>
                                             )}
                                         </div>
 
-                                        {/* Customer details */}
-                                        <div className="border-t border-border pt-4 space-y-3">
-                                            <p className="text-sm font-bold text-foreground">Your Details</p>
-                                            <input required value={name} onChange={e => setName(e.target.value)} placeholder="Full Name *" className="w-full bg-input border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-2 focus:ring-primary outline-none" />
-                                            <input
-                                                required
-                                                type="tel"
-                                                value={phone}
-                                                onChange={e => setPhone(e.target.value)}
-                                                placeholder="Phone Number (e.g. 077 xxxxxxx) *"
-                                                className="w-full bg-input border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-2 focus:ring-primary outline-none"
-                                            />
-                                        </div>
-
-                                        {/* Vehicle details */}
-                                        <div className="space-y-3">
-                                            <p className="text-sm font-bold text-foreground">Vehicle Info</p>
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <input required value={carBrand} onChange={e => setCarBrand(e.target.value)} placeholder="Brand *" className="bg-input border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-2 focus:ring-primary outline-none" />
-                                                <input required value={carModel} onChange={e => setCarModel(e.target.value)} placeholder="Model *" className="bg-input border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-2 focus:ring-primary outline-none" />
+                                        {/* Form Fields */}
+                                        <div className="space-y-4 pt-2">
+                                            <div className="space-y-3">
+                                                <input required value={name} onChange={e => setName(e.target.value)} placeholder="Full Name *" className="w-full bg-secondary/30 border border-border rounded-2xl px-5 py-3.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/30 outline-none transition-shadow" />
+                                                <input
+                                                    required
+                                                    type="tel"
+                                                    value={phone}
+                                                    onChange={e => setPhone(e.target.value)}
+                                                    placeholder="Phone Number (e.g. 077 xxxxxxx) *"
+                                                    className="w-full bg-secondary/30 border border-border rounded-2xl px-5 py-3.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/30 outline-none transition-shadow"
+                                                />
                                             </div>
-                                            <input required value={carYear} onChange={e => setCarYear(e.target.value)} placeholder="Year (e.g. 2020) *" className="w-full bg-input border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-2 focus:ring-primary outline-none" />
-                                            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Special notes (optional)" rows={2} className="w-full bg-input border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:ring-2 focus:ring-primary outline-none resize-none" />
+
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <input required value={carBrand} onChange={e => setCarBrand(e.target.value)} placeholder="Car Brand *" className="bg-secondary/30 border border-border rounded-2xl px-5 py-3.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/30 outline-none transition-shadow" />
+                                                <input required value={carModel} onChange={e => setCarModel(e.target.value)} placeholder="Model *" className="bg-secondary/30 border border-border rounded-2xl px-5 py-3.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/30 outline-none transition-shadow" />
+                                            </div>
+                                            <input required value={carYear} onChange={e => setCarYear(e.target.value)} placeholder="Manufacturing Year *" className="w-full bg-secondary/30 border border-border rounded-2xl px-5 py-3.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/30 outline-none transition-shadow" />
+                                            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Briefly describe your vehicle issues..." rows={2} className="w-full bg-secondary/30 border border-border rounded-2xl px-5 py-3.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/30 outline-none resize-none transition-shadow" />
                                         </div>
 
-                                        {error && <p className="text-destructive text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>}
+                                        {error && (
+                                            <div className="flex items-start gap-2 text-[11px] font-bold text-red-500 bg-red-500/10 border border-red-500/20 rounded-xl p-3 uppercase tracking-tighter">
+                                                <ShieldAlert className="w-4 h-4 shrink-0" />
+                                                <span>{error}</span>
+                                            </div>
+                                        )}
 
                                         <button
                                             type="submit"
                                             disabled={submitting || !dateStr || selectedSlot === null}
-                                            className="w-full mt-2 bg-primary hover:bg-red-700 disabled:bg-secondary disabled:text-muted-foreground disabled:cursor-not-allowed text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-[0_0_15px_rgba(220,38,38,0.2)]"
+                                            className="relative w-full overflow-hidden bg-primary hover:bg-red-700 disabled:bg-secondary disabled:text-muted-foreground disabled:cursor-not-allowed text-white py-5 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-3 transition-all shadow-xl shadow-primary/20 active:scale-95 group/btn"
                                         >
-                                            {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <MessageCircle className="w-5 h-5" />}
-                                            {submitting ? "Booking..." : "Confirm & Send via WhatsApp"}
+                                            {/* Shine effect */}
+                                            <div className="absolute top-0 -inset-full h-full w-1/2 z-0 block transform -translate-x-[150%] skew-x-12 bg-gradient-to-r from-transparent to-white/20 opacity-0 group-hover/btn:opacity-100 group-hover/btn:translate-x-[250%] transition-all duration-1000 ease-in-out pointer-events-none" />
+
+                                            {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <MessageCircle className="w-5 h-5 group-hover/btn:scale-125 transition-transform" />}
+                                            <span className="relative z-10">{submitting ? "Processing..." : "Confirm & Book Now"}</span>
                                         </button>
+                                        <p className="text-[10px] text-center text-muted-foreground font-bold uppercase tracking-widest">A copy will be sent to our WhatsApp</p>
                                     </form>
                                 </>
                             )}

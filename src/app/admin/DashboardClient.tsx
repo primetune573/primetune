@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { ChevronLeft, ChevronRight, ArrowRight, Wrench, Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, ArrowRight, Wrench, Download, LogOut } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { adminLogout } from "@/app/actions/auth";
 
 function formatSlotRange(timeStr: string, durationHrs: number): string {
     // timeStr format: "8:00 AM"
@@ -34,10 +36,16 @@ const STATUS_COLOR: Record<string, string> = {
 type Booking = Record<string, any>;
 
 export default function DashboardClient({ bookings, serviceCount }: { bookings: Booking[]; serviceCount: number }) {
+    const router = useRouter();
     const today = new Date();
     const [viewYear, setViewYear] = useState(today.getFullYear());
     const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-indexed
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+    const handleLogout = async () => {
+        await adminLogout();
+        router.push("/admin/login");
+    };
 
     const totalBookings = bookings.length;
     const pendingCount = bookings.filter(b => b["Status"] === "pending").length;
@@ -78,26 +86,40 @@ export default function DashboardClient({ bookings, serviceCount }: { bookings: 
 
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
+    const todaysBookings = bookings.filter(b => b["Date"] === todayStr && b["Status"] !== "cancelled");
+    const upcomingBookings = bookings.filter(b => {
+        if (!b["Date"] || b["Status"] === "cancelled" || b["Status"] === "completed") return false;
+        return b["Date"] > todayStr;
+    });
+
     const statCards = [
-        { label: "Total Bookings", value: totalBookings, color: "text-blue-600" },
-        { label: "Pending", value: pendingCount, color: "text-amber-600" },
-        { label: "Revenue Earned (LKR)", value: completedRevenue.toLocaleString(), color: "text-green-600" },
-        { label: "Active Services", value: serviceCount, color: "text-primary" },
+        { label: "Today's Jobs", value: todaysBookings.length, color: "text-blue-600", sub: "Active confirmed/pending" },
+        { label: "Upcoming", value: upcomingBookings.length, color: "text-primary", sub: "Scheduled for future" },
+        { label: "Pending Review", value: pendingCount, color: "text-amber-600", sub: "Awaiting confirmation" },
+        { label: "Revenue (LKR)", value: completedRevenue.toLocaleString(), color: "text-green-600", sub: "From completed jobs" },
     ];
 
     return (
         <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
-            <div>
-                <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Dashboard Overview</h1>
-                <p className="text-muted-foreground mt-1">Welcome back. Here is what's happening at PrimeTune.</p>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                <div>
+                    <h1 className="text-4xl font-black text-foreground tracking-tight">Dashboard Overview</h1>
+                    <p className="text-muted-foreground mt-1 font-medium">Welcome back. PrimeTune is currently handling <span className="text-primary font-bold">{todaysBookings.length}</span> appointments today.</p>
+                </div>
+                <div className="flex gap-2">
+                    <Link href="/admin/bookings" className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold shadow-lg shadow-primary/20 hover:scale-105 transition-transform active:scale-95">
+                        Manage Bookings
+                    </Link>
+                </div>
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                 {statCards.map((c, i) => (
-                    <div key={i} className="bg-card border border-border p-6 rounded-2xl shadow-sm hover:border-primary/50 transition-colors">
-                        <p className="text-muted-foreground text-sm font-medium mb-1">{c.label}</p>
-                        <h3 className={`text-3xl font-black ${c.color}`}>{c.value}</h3>
+                    <div key={i} className="bg-card border border-border p-6 rounded-3xl shadow-sm hover:border-primary/30 transition-all hover:shadow-xl hover:shadow-primary/5 group">
+                        <p className="text-muted-foreground text-[10px] uppercase font-black tracking-widest mb-1 group-hover:text-primary transition-colors">{c.label}</p>
+                        <h3 className={`text-4xl font-black ${c.color} tracking-tighter`}>{c.value}</h3>
+                        <p className="text-xs text-muted-foreground mt-2 font-medium bg-muted/50 py-1 px-2 rounded-lg inline-block">{c.sub}</p>
                     </div>
                 ))}
             </div>
@@ -211,6 +233,14 @@ export default function DashboardClient({ bookings, serviceCount }: { bookings: 
                                 Manage All Bookings
                                 <ArrowRight className="w-4 h-4 ml-auto text-muted-foreground" />
                             </Link>
+
+                            <button
+                                onClick={handleLogout}
+                                className="w-full bg-destructive/5 hover:bg-destructive/10 border border-destructive/20 text-destructive font-bold py-3 px-4 rounded-xl flex items-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            >
+                                <LogOut className="w-5 h-5" /> Sign Out
+                                <ArrowRight className="w-4 h-4 ml-auto text-destructive/50" />
+                            </button>
                         </div>
                     </div>
 

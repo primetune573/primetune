@@ -57,8 +57,27 @@ export default function CartPage() {
                 whatsapp_message: ""
             };
 
+            const getRangeLabel = (startTime: string, duration: number) => {
+                if (!startTime) return "";
+                try {
+                    const [timePart, ampm] = startTime.split(" ");
+                    let hour = parseInt(timePart.split(":")[0]);
+                    if (ampm === "PM" && hour !== 12) hour += 12;
+                    if (ampm === "AM" && hour === 12) hour = 0;
+
+                    const endHour = hour + duration;
+                    const endAmpm = endHour >= 12 && endHour < 24 ? "PM" : "AM";
+                    let displayEndHour = endHour % 12;
+                    if (displayEndHour === 0) displayEndHour = 12;
+
+                    return `${startTime} - ${displayEndHour}:00 ${endAmpm}`;
+                } catch {
+                    return startTime;
+                }
+            };
+
             // Generate WhatsApp msg
-            const lineItems = items.map(i => `- ${i.name} (LKR ${i.price.toLocaleString()}) on ${i.selectedDate} at ${i.selectedTime}`).join("\n");
+            const lineItems = items.map(i => `- ${i.name} (LKR ${i.price.toLocaleString()}) on ${i.selectedDate} at ${getRangeLabel(i.selectedTime, i.duration)}`).join("\n");
             const whatsappMsg = `*New Booking from PrimeTune Web*\n\n*Customer:* ${data.fullName}\n*Phone:* ${data.phone}\n*Vehicle:* ${data.carYear} ${data.carBrand} ${data.carModel}\n\n*Services Requested:*\n${lineItems}\n\n*Total Estimate:* LKR ${getTotalPrice().toLocaleString()}\n*Notes:* ${data.notes || 'None'}`;
 
             bookingPayload.whatsapp_message = whatsappMsg;
