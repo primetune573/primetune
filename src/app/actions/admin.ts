@@ -1,226 +1,129 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import * as xlsx from "xlsx";
-import fs from "fs";
-import path from "path";
-
-const servicesFile = path.join(process.cwd(), "services.json");
-const bookingsFile = path.join(process.cwd(), "bookings_export.xlsx");
-
-function getLocalServices() {
-    if (fs.existsSync(servicesFile)) {
-        return JSON.parse(fs.readFileSync(servicesFile, "utf-8"));
-    }
-    return [];
-}
-
-function saveLocalServices(data: any[]) {
-    fs.writeFileSync(servicesFile, JSON.stringify(data, null, 2));
-}
-
-function readBookingsWorkbook() {
-    if (fs.existsSync(bookingsFile)) {
-        const buf = fs.readFileSync(bookingsFile);
-        return xlsx.read(buf, { type: "buffer" });
-    }
-    return null;
-}
-
-function writeWorkbook(workbook: xlsx.WorkBook) {
-    try {
-        const buf = xlsx.write(workbook, { type: "buffer", bookType: "xlsx" });
-        fs.writeFileSync(bookingsFile, buf);
-    } catch (e: any) {
-        if (e.code === "EBUSY" || e.code === "EPERM") {
-            throw new Error("EXCEL_OPEN");
-        }
-        throw e;
-    }
-}
-
-function handleExcelErr(e: any) {
-    if (e.message === "EXCEL_OPEN") {
-        return { success: false, error: "The Excel file is open. Please close it and try again." };
-    }
-    return { success: false, error: e.message };
-}
+import { createClient } from "@/utils/supabase/server";
 
 // ─── Booking Actions ───────────────────────────────────────────────
 
 /** Update status: pending → confirmed → completed, OR cancel */
 export async function adminUpdateBookingStatus(
-    _id: string,
+    _id: string, // Kept for legacy compatibility
     bookingNumber: string,
     status: "pending" | "confirmed" | "completed" | "cancelled",
     cancellationReason?: string
 ) {
     try {
-        const wb = readBookingsWorkbook();
-        if (!wb) return { success: false, error: "No bookings file found." };
+        const supabase = await createClient();
+        const updateData: any = {
+            status,
+            updated_at: new Date().toISOString()
+        };
 
-        const sheetName = "Bookings";
-        const ws = wb.Sheets[sheetName];
-        const records = xlsx.utils.sheet_to_json(ws) as any[];
-
-        const idx = records.findIndex((r) => r["Booking Number"] === bookingNumber);
-        if (idx !== -1) {
-            records[idx]["Status"] = status;
-            if (status === "cancelled" && cancellationReason) {
-                records[idx]["Cancellation Reason"] = cancellationReason;
-            }
-            records[idx]["Updated At"] = new Date().toISOString();
+        if (status === "cancelled" && cancellationReason) {
+            updateData.cancellation_reason = cancellationReason;
+            updateData.cancelled_at = new Date().toISOString();
         }
 
-        const newWs = xlsx.utils.json_to_sheet(records);
-        wb.Sheets[sheetName] = newWs;
-        writeWorkbook(wb);
+        if (status === "completed") {
+            updateData.completed_at = new Date().toISOString();
+        }
+
+        const { error } = await supabase
+            .from('bookings')
+            .update(updateData)
+            .eq('booking_number', bookingNumber);
+
+        if (error) throw error;
 
         revalidatePath("/admin/bookings");
         revalidatePath("/admin");
         return { success: true };
     } catch (e: any) {
-        return handleExcelErr(e);
+        return { success: false, error: e.message };
     }
 }
 
-/** Soft-cancel — keeps row, sets status to cancelled AND applies red font color in Excel */
+/** Soft-cancel — keeps record, sets status to cancelled */
 export async function adminCancelBooking(bookingNumber: string, reason: string) {
-    // First update the status in the xlsx records
-    const result = await adminUpdateBookingStatus("", bookingNumber, "cancelled", reason);
-    if (!result.success) return result;
-
-    // Then apply red color using exceljs
-    try {
-        const ExcelJS = (await import("exceljs")).default;
-        const wb = new ExcelJS.Workbook();
-        await wb.xlsx.readFile(bookingsFile);
-        const ws = wb.getWorksheet("Bookings");
-        if (ws) {
-            ws.eachRow((row, rowNumber) => {
-                if (rowNumber === 1) return; // skip header
-                const cell = row.getCell(1); // "Booking Number" column
-                if (cell.value === bookingNumber || String(cell.value).includes(bookingNumber)) {
-                    row.eachCell((c) => {
-                        c.font = { ...(c.font || {}), color: { argb: "FFCC0000" }, bold: false };
-                    });
-                }
-            });
-            await wb.xlsx.writeFile(bookingsFile);
-        }
-    } catch (e: any) {
-        // Non-fatal: status was already cancelled, color is cosmetic
-        console.warn("Could not apply red color to Excel row:", e.message);
-    }
-
-    revalidatePath("/admin/bookings");
-    revalidatePath("/admin");
-    return { success: true };
+    return adminUpdateBookingStatus("", bookingNumber, "cancelled", reason);
 }
 
 /** Re-activate a cancelled booking */
 export async function adminReactivateBooking(bookingNumber: string) {
     try {
-        const wb = readBookingsWorkbook();
-        if (!wb) return { success: false, error: "No bookings file found." };
+        const supabase = await createClient();
 
-        const sheetName = "Bookings";
-        const ws = wb.Sheets[sheetName];
-        const records = xlsx.utils.sheet_to_json(ws) as any[];
+        // Fetch current notes to append reactivation memo
+        const { data: booking } = await supabase
+            .from('bookings')
+            .select('notes')
+            .eq('booking_number', bookingNumber)
+            .single();
 
-        const idx = records.findIndex((r) => r["Booking Number"] === bookingNumber);
-        if (idx === -1) return { success: false, error: "Booking not found." };
+        const { error } = await supabase
+            .from('bookings')
+            .update({
+                status: 'pending',
+                cancellation_reason: null,
+                cancelled_at: null,
+                updated_at: new Date().toISOString(),
+                notes: (booking?.notes || "") + ` [Reactivated on ${new Date().toLocaleDateString()}]`
+            })
+            .eq('booking_number', bookingNumber);
 
-        records[idx]["Status"] = "pending";
-        records[idx]["Updated At"] = new Date().toISOString();
-        records[idx]["Notes"] = (records[idx]["Notes"] || "") + ` [Reactivated on ${new Date().toLocaleDateString()}]`;
-
-        const newWs = xlsx.utils.json_to_sheet(records);
-        wb.Sheets[sheetName] = newWs;
-        writeWorkbook(wb);
-
-        // Reset color in Excel
-        try {
-            const ExcelJS = (await import("exceljs")).default;
-            const wbE = new ExcelJS.Workbook();
-            await wbE.xlsx.readFile(bookingsFile);
-            const wsE = wbE.getWorksheet("Bookings");
-            if (wsE) {
-                wsE.eachRow((row, rowNumber) => {
-                    if (rowNumber === 1) return;
-                    const cell = row.getCell(1);
-                    if (cell.value === bookingNumber || String(cell.value).includes(bookingNumber)) {
-                        row.eachCell((c) => {
-                            c.font = { color: { argb: "FF000000" }, bold: false };
-                        });
-                    }
-                });
-                await wbE.xlsx.writeFile(bookingsFile);
-            }
-        } catch (e) { }
+        if (error) throw error;
 
         revalidatePath("/admin/bookings");
         revalidatePath("/admin");
         return { success: true };
     } catch (e: any) {
-        return handleExcelErr(e);
+        return { success: false, error: e.message };
     }
 }
 
 /** Reschedule a booking */
 export async function adminRescheduleBooking(bookingNumber: string, newDate: string, newTime: string) {
     try {
-        const wb = readBookingsWorkbook();
-        if (!wb) return { success: false, error: "No bookings file found." };
+        const supabase = await createClient();
+        const { error } = await supabase
+            .from('bookings')
+            .update({
+                booking_date: newDate,
+                booking_time: newTime,
+                status: 'confirmed',
+                updated_at: new Date().toISOString()
+            })
+            .eq('booking_number', bookingNumber);
 
-        const sheetName = "Bookings";
-        const ws = wb.Sheets[sheetName];
-        const records = xlsx.utils.sheet_to_json(ws) as any[];
-
-        const idx = records.findIndex((r) => r["Booking Number"] === bookingNumber);
-        if (idx === -1) return { success: false, error: "Booking not found." };
-
-        records[idx]["Date"] = newDate;
-        records[idx]["Time"] = newTime;
-        records[idx]["Status"] = "confirmed";
-        records[idx]["Updated At"] = new Date().toISOString();
-
-        const newWs = xlsx.utils.json_to_sheet(records);
-        wb.Sheets[sheetName] = newWs;
-        writeWorkbook(wb);
+        if (error) throw error;
 
         revalidatePath("/admin/bookings");
         revalidatePath("/admin");
         return { success: true };
     } catch (e: any) {
-        return handleExcelErr(e);
+        return { success: false, error: e.message };
     }
 }
 
-/** Hard delete — permanently removes the row from Excel */
+/** Hard delete — permanently removes from Supabase */
 export async function adminPermanentlyDeleteBooking(bookingNumber: string) {
     try {
-        const wb = readBookingsWorkbook();
-        if (!wb) return { success: false, error: "No bookings file found." };
+        const supabase = await createClient();
+        const { error } = await supabase
+            .from('bookings')
+            .delete()
+            .eq('booking_number', bookingNumber);
 
-        const sheetName = "Bookings";
-        const ws = wb.Sheets[sheetName];
-        let records = xlsx.utils.sheet_to_json(ws) as any[];
-        records = records.filter((r) => r["Booking Number"] !== bookingNumber);
-
-        const newWs = xlsx.utils.json_to_sheet(records);
-        wb.Sheets[sheetName] = newWs;
-        writeWorkbook(wb);
+        if (error) throw error;
 
         revalidatePath("/admin/bookings");
         revalidatePath("/admin");
         return { success: true };
     } catch (e: any) {
-        return handleExcelErr(e);
+        return { success: false, error: e.message };
     }
 }
 
-// Keep legacy name for any residual references
 export async function adminDeleteBooking(_id: string, bookingNumber: string) {
     return adminPermanentlyDeleteBooking(bookingNumber);
 }
@@ -229,14 +132,23 @@ export async function adminDeleteBooking(_id: string, bookingNumber: string) {
 
 export async function adminCreateService(data: any) {
     try {
-        const services = getLocalServices();
-        const newService = {
-            ...data,
-            id: `pt-svc-${Date.now()}`,
-            created_at: new Date().toISOString(),
-        };
-        services.push(newService);
-        saveLocalServices(services);
+        const supabase = await createClient();
+        const { error } = await supabase
+            .from('services')
+            .insert({
+                name: data.name,
+                description: data.summary,
+                price: data.price,
+                duration_hours: data.duration_hours,
+                category: data.category,
+                image_url: data.image,
+                is_emergency: data.emergency || false,
+                included_items: data.included || [],
+                is_active: true
+            });
+
+        if (error) throw error;
+
         revalidatePath("/admin/services");
         revalidatePath("/services");
         return { success: true };
@@ -247,12 +159,24 @@ export async function adminCreateService(data: any) {
 
 export async function adminUpdateService(id: string, data: any) {
     try {
-        const services = getLocalServices();
-        const idx = services.findIndex((s: any) => s.id === id);
-        if (idx !== -1) {
-            services[idx] = { ...services[idx], ...data };
-            saveLocalServices(services);
-        }
+        const supabase = await createClient();
+        const { error } = await supabase
+            .from('services')
+            .update({
+                name: data.name,
+                description: data.description || data.summary,
+                price: data.price,
+                duration_hours: data.duration_hours,
+                category: data.category,
+                image_url: data.image_url || data.image,
+                is_emergency: data.emergency,
+                included_items: data.included || data.included_items,
+                is_active: data.is_active !== undefined ? data.is_active : true
+            })
+            .eq('id', id);
+
+        if (error) throw error;
+
         revalidatePath("/admin/services");
         revalidatePath("/services");
         return { success: true };
@@ -263,9 +187,14 @@ export async function adminUpdateService(id: string, data: any) {
 
 export async function adminDeleteService(id: string) {
     try {
-        let services = getLocalServices();
-        services = services.filter((s: any) => s.id !== id);
-        saveLocalServices(services);
+        const supabase = await createClient();
+        const { error } = await supabase
+            .from('services')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+
         revalidatePath("/admin/services");
         revalidatePath("/services");
         return { success: true };
@@ -276,35 +205,40 @@ export async function adminDeleteService(id: string) {
 
 /** Availability Blocks ─────────────────────────────────────────────── */
 
-const blocksFile = path.join(process.cwd(), "availability_blocks.json");
-
 export async function getAvailabilityBlocks() {
-    if (fs.existsSync(blocksFile)) {
-        try {
-            return JSON.parse(fs.readFileSync(blocksFile, "utf-8"));
-        } catch (e) {
-            return { holidays: [], blocked_slots: [] };
-        }
+    try {
+        const supabase = await createClient();
+        const { data, error } = await supabase
+            .from('availability_blocks')
+            .select('*');
+
+        if (error) throw error;
+
+        return {
+            holidays: data.filter(b => b.type === 'full-day'),
+            blocked_slots: data.filter(b => b.type === 'partial')
+        };
+    } catch (e) {
+        return { holidays: [], blocked_slots: [] };
     }
-    return { holidays: [], blocked_slots: [] };
 }
 
 export async function addAvailabilityBlock(block: any) {
     try {
-        const blocks = await getAvailabilityBlocks();
-        const newBlock = {
-            ...block,
-            id: `block-${Date.now()}`,
-            created_at: new Date().toISOString(),
-        };
+        const supabase = await createClient();
+        const { error } = await supabase
+            .from('availability_blocks')
+            .insert({
+                type: block.type,
+                date: block.date,
+                start_hour: block.start_hour || 0,
+                end_hour: block.end_hour || 24,
+                reason: block.reason,
+                created_at: new Date().toISOString()
+            });
 
-        if (block.type === "full-day") {
-            blocks.holidays.push(newBlock);
-        } else {
-            blocks.blocked_slots.push(newBlock);
-        }
+        if (error) throw error;
 
-        fs.writeFileSync(blocksFile, JSON.stringify(blocks, null, 2));
         revalidatePath("/admin/availability");
         revalidatePath("/");
         revalidatePath("/services");
@@ -316,14 +250,14 @@ export async function addAvailabilityBlock(block: any) {
 
 export async function deleteAvailabilityBlock(id: string, type: "full-day" | "partial") {
     try {
-        const blocks = await getAvailabilityBlocks();
-        if (type === "full-day") {
-            blocks.holidays = blocks.holidays.filter((b: any) => b.id !== id);
-        } else {
-            blocks.blocked_slots = blocks.blocked_slots.filter((b: any) => b.id !== id);
-        }
+        const supabase = await createClient();
+        const { error } = await supabase
+            .from('availability_blocks')
+            .delete()
+            .eq('id', id);
 
-        fs.writeFileSync(blocksFile, JSON.stringify(blocks, null, 2));
+        if (error) throw error;
+
         revalidatePath("/admin/availability");
         revalidatePath("/");
         revalidatePath("/services");
@@ -336,11 +270,31 @@ export async function deleteAvailabilityBlock(id: string, type: "full-day" | "pa
 /** Returns all bookings for the admin dashboard and calendar */
 export async function getAllBookings() {
     try {
-        const wb = readBookingsWorkbook();
-        if (!wb) return [];
-        const ws = wb.Sheets["Bookings"];
-        if (!ws) return [];
-        return xlsx.utils.sheet_to_json(ws) as any[];
+        const supabase = await createClient();
+        const { data, error } = await supabase
+            .from('bookings')
+            .select('*')
+            .order('booking_date', { ascending: false });
+
+        if (error) throw error;
+
+        // Map Supabase fields back to the "Excel-style" keys the frontend expects
+        return data.map(b => ({
+            "Booking Number": b.booking_number,
+            "Date": b.booking_date,
+            "Time": b.booking_time,
+            "Customer": b.customer_name,
+            "Phone": b.customer_phone,
+            "Vehicle": `${b.car_brand} ${b.car_model} (${b.car_year})`,
+            "Services": b.service_names_snapshot?.join(", "),
+            "Total Price": b.total_price,
+            "Duration (hrs)": b.duration_hours,
+            "Status": b.status,
+            "Notes": b.notes,
+            "Cancellation Reason": b.cancellation_reason,
+            "Created At": b.created_at,
+            "Updated At": b.updated_at
+        }));
     } catch (e) {
         return [];
     }

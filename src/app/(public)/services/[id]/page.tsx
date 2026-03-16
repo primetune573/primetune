@@ -1,17 +1,28 @@
-import fs from "fs";
-import path from "path";
+import { createClient } from "@/utils/supabase/server";
 import ServiceDetailsClient from "./ServiceDetailsClient";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 async function getServiceById(id: string) {
-    const servicesFile = path.join(process.cwd(), 'services.json');
-    if (fs.existsSync(servicesFile)) {
-        const services = JSON.parse(fs.readFileSync(servicesFile, 'utf-8'));
-        return services.find((s: any) => s.id === id);
+    const supabase = await createClient();
+    const { data, error } = await supabase
+        .from('services')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+    if (error || !data) {
+        return null;
     }
-    return null;
+
+    return {
+        ...data,
+        summary: data.description,
+        image: data.image_url,
+        emergency: data.is_emergency,
+        included: data.included_items
+    };
 }
 
 export default async function ServiceDetailsPage({ params }: { params: Promise<{ id: string }> }) {

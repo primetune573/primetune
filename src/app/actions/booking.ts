@@ -1,35 +1,37 @@
 "use server";
 
-import * as xlsx from "xlsx";
-import fs from "fs";
-import path from "path";
-
+import { createClient } from "@/utils/supabase/server";
 import { getAvailableTimeSlots } from "@/lib/bookingLogic";
 
-const EXCEL_FILE = path.join(process.cwd(), "bookings_export.xlsx");
+/** Fetch availability blocks and format them for the logic */
+async function getSupabaseAvailabilityBlocks() {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+        .from('availability_blocks')
+        .select('*');
 
-function readWorkbook() {
-    if (fs.existsSync(EXCEL_FILE)) {
-        const buf = fs.readFileSync(EXCEL_FILE);
-        return xlsx.read(buf, { type: "buffer" });
-    }
-    return null;
+    if (error) return { holidays: [], blocked_slots: [] };
+
+    return {
+        holidays: data.filter(b => b.type === 'full-day'),
+        blocked_slots: data.filter(b => b.type === 'partial')
+    };
 }
 
-function getRecords(): any[] {
-    const wb = readWorkbook();
-    if (!wb) return [];
-    const ws = wb.Sheets["Bookings"];
-    if (!ws) return [];
-    return xlsx.utils.sheet_to_json(ws) as any[];
-}
+/** Generate next sequential booking ID: pt-0001, pt-0002 ... from Supabase */
+async function generateBookingNumber(): Promise<string> {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+        .from('bookings')
+        .select('booking_number')
+        .order('created_at', { ascending: false })
+        .limit(50); // Check recent ones to find the max
 
-/** Generate next sequential booking ID: pt-0001, pt-0002 ... */
-function generateBookingNumber(): string {
-    const records = getRecords();
+    if (error || !data) return "pt-0001";
+
     let max = 0;
-    for (const r of records) {
-        const num = r["Booking Number"] as string;
+    for (const r of data) {
+        const num = r.booking_number as string;
         if (num && num.toLowerCase().startsWith("pt-")) {
             const n = parseInt(num.toLowerCase().replace("pt-", ""), 10);
             if (!isNaN(n) && n > max) max = n;
@@ -43,7 +45,8 @@ export async function getAvailableSlotsAction(dateStr: string, durationHours: nu
     if (!dateStr) return [];
     try {
         const booked = await getBookedSlotsForDate(dateStr);
-        return getAvailableTimeSlots(new Date(dateStr), durationHours, booked);
+        const blocks = await getSupabaseAvailabilityBlocks();
+        return getAvailableTimeSlots(new Date(dateStr), durationHours, booked, blocks);
     } catch (e) {
         return [];
     }
@@ -53,17 +56,19 @@ export async function getAvailableSlotsAction(dateStr: string, durationHours: nu
 export async function getBookedSlotsForDate(
     dateStr: string
 ): Promise<{ time: string; duration: number }[]> {
-    const records = getRecords();
-    return records
-        .filter(
-            (r) =>
-                r["Date"] === dateStr &&
-                r["Status"] !== "cancelled"
-        )
-        .map((r) => ({
-            time: r["Time"] as string,
-            duration: parseFloat(r["Duration (hrs)"]) || 1,
-        }));
+    const supabase = await createClient();
+    const { data, error } = await supabase
+        .from('bookings')
+        .select('booking_time, duration_hours')
+        .eq('booking_date', dateStr)
+        .neq('status', 'cancelled');
+
+    if (error || !data) return [];
+
+    return data.map((r) => ({
+        time: r.booking_time,
+        duration: r.duration_hours,
+    }));
 }
 
 export async function submitBooking(data: {
@@ -83,9 +88,12 @@ export async function submitBooking(data: {
     notes: string;
 }) {
     try {
+        const supabase = await createClient();
+
         // Server-side check against manual blocks AND existing bookings
         const booked = await getBookedSlotsForDate(data.booking_date);
-        const available = getAvailableTimeSlots(new Date(data.booking_date), data.duration_hours, booked);
+        const blocks = await getSupabaseAvailabilityBlocks();
+        const available = getAvailableTimeSlots(new Date(data.booking_date), data.duration_hours, booked, blocks);
         const slot = available.find(s => s.time === data.booking_time || s.time === "Full Day");
 
         if (!slot || slot.status === "blocked") {
@@ -93,66 +101,32 @@ export async function submitBooking(data: {
             return { success: false, error: `UNAVAILABLE: ${reason}` };
         }
 
-        const booking_number = generateBookingNumber();
-
+        const booking_number = await generateBookingNumber();
         const serviceNames = data.service_name || (data.service_names_snapshot ? data.service_names_snapshot.join(", ") : "Manual Entry");
 
-        const rowDetails = {
-            "Booking Number": booking_number,
-            Date: data.booking_date,
-            Time: data.booking_time,
-            Customer: data.customer_name,
-            Phone: data.customer_phone,
-            Car: `${data.car_brand} ${data.car_model} (${data.car_year})`,
-            Services: serviceNames,
-            "Total Price": data.total_price,
-            "Duration (hrs)": data.duration_hours,
-            Status: "pending",
-            Notes: data.notes,
-            "Created At": new Date().toISOString(),
-        };
+        const { error } = await supabase.from('bookings').insert({
+            booking_number,
+            customer_name: data.customer_name,
+            customer_phone: data.customer_phone,
+            car_brand: data.car_brand,
+            car_model: data.car_model,
+            car_year: data.car_year,
+            service_ids: data.service_ids || [],
+            service_names_snapshot: data.service_names_snapshot || [serviceNames],
+            total_price: data.total_price,
+            duration_hours: data.duration_hours,
+            booking_date: data.booking_date,
+            booking_time: data.booking_time,
+            status: "pending",
+            notes: data.notes,
+            created_at: new Date().toISOString()
+        });
 
-        await appendToExcel(rowDetails);
+        if (error) throw error;
 
         return { success: true, booking_number };
     } catch (err: any) {
         console.error("Booking submission failed:", err);
-        return {
-            success: false,
-            error:
-                err.message === "EXCEL_FILE_OPEN" ? "EXCEL_FILE_OPEN" : err.message,
-        };
-    }
-}
-
-async function appendToExcel(record: any) {
-    const filePath = EXCEL_FILE;
-    let workbook: xlsx.WorkBook;
-    const sheetName = "Bookings";
-
-    if (fs.existsSync(filePath)) {
-        const buf = fs.readFileSync(filePath);
-        workbook = xlsx.read(buf, { type: "buffer" });
-    } else {
-        workbook = xlsx.utils.book_new();
-        const ws = xlsx.utils.json_to_sheet([]);
-        xlsx.utils.book_append_sheet(workbook, ws, sheetName);
-    }
-
-    const worksheet = workbook.Sheets[sheetName];
-    const existing = worksheet ? (xlsx.utils.sheet_to_json(worksheet) as any[]) : [];
-    existing.push(record);
-
-    const newWs = xlsx.utils.json_to_sheet(existing);
-    workbook.Sheets[sheetName] = newWs;
-
-    try {
-        const buf = xlsx.write(workbook, { type: "buffer", bookType: "xlsx" });
-        fs.writeFileSync(filePath, buf);
-    } catch (e: any) {
-        if (e.code === "EBUSY" || e.code === "EPERM") {
-            throw new Error("EXCEL_FILE_OPEN");
-        }
-        throw e;
+        return { success: false, error: err.message };
     }
 }

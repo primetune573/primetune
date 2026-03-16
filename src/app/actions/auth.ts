@@ -1,32 +1,55 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { createClient } from "@/utils/supabase/server";
 
 export async function adminLogin(formData: FormData) {
-    const user = formData.get("username");
-    const pass = formData.get("password");
+    const email = formData.get("username") as string; // The login form uses 'username' but we'll use it as email for Supabase Auth
+    const pass = formData.get("password") as string;
 
-    // In real Supabase architecture:
-    // await supabase.auth.signInWithPassword({ email, password })
-    // Check role = admin in RLS or JWT
+    const supabase = await createClient();
 
-    // Demo requirement: admin / admin
-    if (user === "admin" && pass === "admin") {
-        const cookieStore = await cookies();
-        cookieStore.set("admin_token", "authenticated_admin_demo", {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            maxAge: 60 * 60 * 24, // 1 day
-            path: "/",
-        });
-        return { success: true };
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password: pass,
+    });
+
+    if (authError) {
+        return { success: false, error: authError.message };
     }
 
-    return { success: false, error: "Invalid credentials" };
+    // Verify role in profiles table
+    const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', authData.user.id)
+        .single();
+
+    if (profileError || profile?.role !== 'admin') {
+        // If not admin, sign them back out
+        await supabase.auth.signOut();
+        return { success: false, error: "Unauthorized access" };
+    }
+
+    return { success: true };
 }
 
 export async function adminLogout() {
-    const cookieStore = await cookies();
-    cookieStore.delete("admin_token");
+    const supabase = await createClient();
+    await supabase.auth.signOut();
     return { success: true };
+}
+
+/** Check if the current user is an authenticated admin */
+export async function isAdmin() {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+    return profile?.role === 'admin';
 }

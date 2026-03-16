@@ -1,16 +1,17 @@
 import { getAllBookings } from "@/app/actions/admin";
 import DashboardClient from "./DashboardClient";
-import fs from "fs";
-import path from "path";
+import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 async function getServiceCount() {
-    const f = path.join(process.cwd(), "services.json");
-    if (fs.existsSync(f)) {
-        return JSON.parse(fs.readFileSync(f, "utf-8")).length;
-    }
-    return 0;
+    const supabase = await createClient();
+    const { count, error } = await supabase
+        .from('services')
+        .select('*', { count: 'exact', head: true });
+
+    if (error) return 0;
+    return count || 0;
 }
 
 export default async function AdminDashboard() {
@@ -19,8 +20,6 @@ export default async function AdminDashboard() {
         getServiceCount(),
     ]);
 
-    // Newest first for recent list
-    const sortedBookings = [...bookings].reverse();
-
-    return <DashboardClient bookings={sortedBookings} serviceCount={serviceCount} />;
+    // Bookings are already ordered in getAllBookings, but we'll ensure consistency
+    return <DashboardClient bookings={bookings} serviceCount={serviceCount} />;
 }

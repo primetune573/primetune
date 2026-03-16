@@ -1,22 +1,7 @@
-import { format, addHours, parse, isFriday, setHours, setMinutes, isBefore, startOfDay } from 'date-fns';
-import fs from 'fs';
-import path from 'path';
+import { format, addHours, setHours, setMinutes, isBefore, startOfDay, isFriday } from 'date-fns';
 
 const OPENING_HOUR = 8; // 8 AM
 const CLOSING_HOUR = 18; // 6 PM (18:00)
-
-const blocksFile = path.join(process.cwd(), "availability_blocks.json");
-
-function getAvailabilityBlocks() {
-    if (fs.existsSync(blocksFile)) {
-        try {
-            return JSON.parse(fs.readFileSync(blocksFile, "utf-8"));
-        } catch (e) {
-            return { holidays: [], blocked_slots: [] };
-        }
-    }
-    return { holidays: [], blocked_slots: [] };
-}
 
 function isSlotConflicting(candidateStart: number, candidateDur: number, bookedSlots: { time: string; duration: number }[]): boolean {
     const cEnd = candidateStart + candidateDur;
@@ -36,20 +21,20 @@ function isSlotConflicting(candidateStart: number, candidateDur: number, bookedS
 
 /**
  * Generate available time slots for a given date and service duration.
- * Returns detailed slot objects: { time: string, status: 'available' | 'blocked', reason?: string }
+ * Now accepts blocks from an external source (like Supabase)
  */
 export function getAvailableTimeSlots(
     selectedDate: Date | undefined,
     durationHours: number,
-    bookedSlots: { time: string; duration: number }[] = []
+    bookedSlots: { time: string; duration: number }[] = [],
+    availabilityBlocks: { holidays: any[], blocked_slots: any[] } = { holidays: [], blocked_slots: [] }
 ): any[] {
     if (!selectedDate) return [];
 
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
-    const blocks = getAvailabilityBlocks();
 
     // Check if it's a holiday
-    const holiday = blocks.holidays.find((h: any) => h.date === dateStr);
+    const holiday = availabilityBlocks.holidays.find((h: any) => h.date === dateStr);
     if (holiday) {
         return [{ time: "Full Day", status: "blocked", reason: holiday.reason || "Garage Closed" }];
     }
@@ -69,7 +54,7 @@ export function getAvailableTimeSlots(
     const startLimit = OPENING_HOUR;
     const endLimit = CLOSING_HOUR - durationHours;
 
-    const dayBlocks = blocks.blocked_slots.filter((s: any) => s.date === dateStr);
+    const dayBlocks = availabilityBlocks.blocked_slots.filter((s: any) => s.date === dateStr);
 
     for (let hour = startLimit; hour <= endLimit; hour++) {
         const slotTime = setMinutes(setHours(selectedDate, hour), 0);

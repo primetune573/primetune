@@ -1,18 +1,28 @@
 import Link from "next/link";
 import { ArrowRight, ShieldCheck, Wrench, CircleDollarSign, Clock, PhoneCall, Star, CheckCircle2, AlertTriangle } from "lucide-react";
 import { MotionDiv, fadeIn, staggerContainer } from "@/components/animated/MotionDiv";
-import fs from "fs";
-import path from "path";
+import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 async function getFeaturedServices() {
-  const servicesFile = path.join(process.cwd(), 'services.json');
-  if (fs.existsSync(servicesFile)) {
-    const data = JSON.parse(fs.readFileSync(servicesFile, 'utf-8'));
-    return data.slice(0, 3); // Top 3 as featured
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('services')
+    .select('*')
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(3);
+
+  if (error) {
+    console.error("Error fetching featured services:", error);
+    return [];
   }
-  return [];
+
+  return data.map(s => ({
+    ...s,
+    image: s.image_url
+  }));
 }
 
 export default async function Home() {

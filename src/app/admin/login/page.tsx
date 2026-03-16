@@ -46,12 +46,12 @@ export default function AdminLoginPage() {
 
                 <form onSubmit={handleSubmit} className="space-y-5">
                     <div>
-                        <label className="block text-sm font-semibold text-foreground mb-1.5">Username</label>
+                        <label className="block text-sm font-semibold text-foreground mb-1.5">Admin Email</label>
                         <input
-                            type="text"
-                            name="username"
+                            type="email"
+                            name="username" // Kept as 'username' to match common action signature, but treated as email
+                            placeholder="admin@primetune.com"
                             required
-                            defaultValue="admin" // Added exclusively for demo purposes based on user prompt
                             className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:ring-2 focus:ring-primary outline-none transition-all"
                         />
                     </div>
@@ -63,7 +63,6 @@ export default function AdminLoginPage() {
                                 type={showPassword ? "text" : "password"}
                                 name="password"
                                 required
-                                defaultValue="admin"
                                 className="w-full bg-input border border-border rounded-lg pl-4 pr-12 py-3 text-foreground focus:ring-2 focus:ring-primary outline-none transition-all"
                             />
                             <button
