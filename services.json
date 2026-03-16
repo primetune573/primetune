@@ -1,0 +1,115 @@
+[
+  {
+    "id": "full-service",
+    "name": "Full Service",
+    "price": 25000,
+    "duration_hours": 4,
+    "category": "Maintenance",
+    "emergency": false,
+    "image": "https://www.shutterstock.com/image-photo/auto-mechanic-working-on-car-600nw-1848898957.jpg",
+    "summary": "Complete vehicle inspection, fluid changes, and tuning.",
+    "created_at": "2024-11-20T00:00:00.000Z",
+    "included": [
+      "engine oil chnage",
+      "oil filter change"
+    ]
+  },
+  {
+    "id": "engine-tune-up",
+    "name": "Engine Tune-Up",
+    "price": 15000,
+    "duration_hours": 3,
+    "category": "Performance",
+    "emergency": false,
+    "image": "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?q=80&w=800&auto=format&fit=crop",
+    "summary": "Restore horsepower and efficiency with a total engine tune-up.",
+    "created_at": "2024-11-20T00:00:00.000Z"
+  },
+  {
+    "id": "brake-inspection",
+    "name": "Brake Inspection",
+    "price": 3500,
+    "duration_hours": 2,
+    "category": "Maintenance",
+    "emergency": false,
+    "image": "https://images.unsplash.com/photo-1486262715619-679ce50f3b92?q=80&w=800&auto=format&fit=crop",
+    "summary": "Thorough brake system check and pad replacement if needed.",
+    "created_at": "2024-11-20T00:00:00.000Z"
+  },
+  {
+    "id": "battery-check",
+    "name": "Battery Check",
+    "price": 1500,
+    "duration_hours": 1,
+    "category": "Maintenance",
+    "emergency": false,
+    "image": "https://images.unsplash.com/photo-1605810230434-7631ac76ec81?q=80&w=800&auto=format&fit=crop",
+    "summary": "Battery health diagnosis and charging system test.",
+    "created_at": "2024-11-20T00:00:00.000Z"
+  },
+  {
+    "id": "wheel-alignment",
+    "name": "Wheel Alignment",
+    "price": 4000,
+    "duration_hours": 1,
+    "category": "Maintenance",
+    "emergency": false,
+    "image": "https://images.unsplash.com/photo-1580273916550-e323be2ae537?q=80&w=800&auto=format&fit=crop",
+    "summary": "Precision wheel alignment and balancing.",
+    "created_at": "2024-11-20T00:00:00.000Z"
+  },
+  {
+    "id": "ac-service",
+    "name": "AC Service",
+    "price": 12000,
+    "duration_hours": 2,
+    "category": "Maintenance",
+    "emergency": false,
+    "image": "https://images.unsplash.com/photo-1603584173870-7f23fdae1b7a?q=80&w=800&auto=format&fit=crop",
+    "summary": "Air conditioning system regas and performance check.",
+    "created_at": "2024-11-20T00:00:00.000Z"
+  },
+  {
+    "id": "emergency-inspection",
+    "name": "Emergency Inspection",
+    "price": 5000,
+    "duration_hours": 1,
+    "category": "Emergency",
+    "emergency": true,
+    "image": "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?q=80&w=800&auto=format&fit=crop",
+    "summary": "Rapid diagnosis for breakdowns or urgent issues.",
+    "created_at": "2024-11-20T00:00:00.000Z"
+  },
+  {
+    "name": "engine repair",
+    "category": "Engine",
+    "price": 10000,
+    "duration_hours": 2,
+    "summary": "aasfddas",
+    "image": "https://t4.ftcdn.net/jpg/05/07/81/29/360_F_507812981_dGZXqBsqkBpEosDjTlJgmaJAyMFra7sp.jpg",
+    "emergency": false,
+    "id": "1773419181057",
+    "created_at": "2026-03-13T16:26:21.057Z",
+    "included": [
+      "nknvk",
+      "bdjbjd",
+      "aakjckajsd"
+    ]
+  },
+  {
+    "name": "Wheel bearing replacement LH, RH",
+    "category": "Maintenance",
+    "price": 6000,
+    "duration_hours": 3,
+    "summary": "vjbsfsvjbhjsvfhjvgiusahlfov",
+    "included": [
+      "lh",
+      "rh",
+      "exhudf"
+    ],
+    "image": "",
+    "emergency": false,
+    "id": "pt-svc-1773509280276",
+    "created_at": "2026-03-14T17:28:00.276Z"
+  }
+]
