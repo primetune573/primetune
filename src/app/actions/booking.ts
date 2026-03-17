@@ -78,7 +78,8 @@ export async function getAvailableSlotsAction(dateStr: string, durationHours: nu
 export async function getBookedSlotsForDate(
     dateStr: string
 ): Promise<{ time: string; duration: number }[]> {
-    const supabase = await createClient();
+    // Use Admin Client to see taken slots regardless of requester role (Public needs this for availability checks)
+    const supabase = createAdminClient();
     const { data, error } = await supabase
         .from('bookings')
         .select('booking_time, duration_hours')

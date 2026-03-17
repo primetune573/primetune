@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/utils/supabase/server";
+import { isAdmin } from "./auth";
 
 // ─── Booking Actions ───────────────────────────────────────────────
 
@@ -12,6 +13,7 @@ export async function adminUpdateBookingStatus(
     status: "pending" | "confirmed" | "completed" | "cancelled",
     cancellationReason?: string
 ) {
+    if (!(await isAdmin())) throw new Error("Unauthorized");
     try {
         const supabase = await createClient();
         const updateData: any = {
@@ -50,6 +52,7 @@ export async function adminCancelBooking(bookingNumber: string, reason: string) 
 
 /** Re-activate a cancelled booking */
 export async function adminReactivateBooking(bookingNumber: string) {
+    if (!(await isAdmin())) throw new Error("Unauthorized");
     try {
         const supabase = await createClient();
 
@@ -83,6 +86,7 @@ export async function adminReactivateBooking(bookingNumber: string) {
 
 /** Reschedule a booking */
 export async function adminRescheduleBooking(bookingNumber: string, newDate: string, newTime: string) {
+    if (!(await isAdmin())) throw new Error("Unauthorized");
     try {
         const supabase = await createClient();
         const { error } = await supabase
@@ -107,6 +111,7 @@ export async function adminRescheduleBooking(bookingNumber: string, newDate: str
 
 /** Hard delete — permanently removes from Supabase */
 export async function adminPermanentlyDeleteBooking(bookingNumber: string) {
+    if (!(await isAdmin())) throw new Error("Unauthorized");
     try {
         const supabase = await createClient();
         const { error } = await supabase
@@ -131,6 +136,7 @@ export async function adminDeleteBooking(_id: string, bookingNumber: string) {
 // ─── Service CRUD ──────────────────────────────────────────────────
 
 export async function adminCreateService(data: any) {
+    if (!(await isAdmin())) throw new Error("Unauthorized");
     try {
         const supabase = await createClient();
         const { error } = await supabase
@@ -158,6 +164,7 @@ export async function adminCreateService(data: any) {
 }
 
 export async function adminUpdateService(id: string, data: any) {
+    if (!(await isAdmin())) throw new Error("Unauthorized");
     try {
         const supabase = await createClient();
         const { error } = await supabase
@@ -186,6 +193,7 @@ export async function adminUpdateService(id: string, data: any) {
 }
 
 export async function adminDeleteService(id: string) {
+    if (!(await isAdmin())) throw new Error("Unauthorized");
     try {
         const supabase = await createClient();
         const { error } = await supabase
@@ -224,6 +232,7 @@ export async function getAvailabilityBlocks() {
 }
 
 export async function addAvailabilityBlock(block: any) {
+    if (!(await isAdmin())) throw new Error("Unauthorized");
     try {
         const supabase = await createClient();
         const { error } = await supabase
@@ -249,6 +258,7 @@ export async function addAvailabilityBlock(block: any) {
 }
 
 export async function deleteAvailabilityBlock(id: string, type: "full-day" | "partial") {
+    if (!(await isAdmin())) throw new Error("Unauthorized");
     try {
         const supabase = await createClient();
         const { error } = await supabase
@@ -269,6 +279,7 @@ export async function deleteAvailabilityBlock(id: string, type: "full-day" | "pa
 
 /** Returns all bookings for the admin dashboard and calendar */
 export async function getAllBookings() {
+    if (!(await isAdmin())) return [];
     try {
         const supabase = await createClient();
         const { data, error } = await supabase

@@ -30,7 +30,25 @@ export async function updateSession(request: NextRequest) {
     );
 
     // refreshing the auth token
-    await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // ─── ADMIN PROTECTION ───────────────────────────────────────────────
+    if (request.nextUrl.pathname.startsWith('/admin') && !request.nextUrl.pathname.startsWith('/admin/login')) {
+        if (!user) {
+            return NextResponse.redirect(new URL('/admin/login', request.url));
+        }
+
+        // Check profile role
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+
+        if (profile?.role !== 'admin') {
+            return NextResponse.redirect(new URL('/', request.url));
+        }
+    }
 
     return supabaseResponse;
 }
