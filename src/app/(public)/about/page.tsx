@@ -11,7 +11,7 @@ export default function AboutUsPage() {
             <section className="relative h-64 md:h-96 w-full flex items-center justify-center overflow-hidden bg-card border-b border-border">
                 <div className="absolute inset-0 bg-black/60 z-10" />
                 <img
-                    src="https://images.unsplash.com/photo-1582294247290-281b67277e3c?q=80&w=2000&auto=format&fit=crop"
+                    src="https://images.pexels.com/photos/4480505/pexels-photo-4480505.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1"
                     alt="Garage Workshop"
                     className="absolute inset-0 w-full h-full object-cover grayscale"
                 />
@@ -35,16 +35,10 @@ export default function AboutUsPage() {
                         <MotionDiv initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeIn} className="relative">
                             <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full translate-x-4 translate-y-4" />
                             <img
-                                src="https://images.unsplash.com/photo-1625047509168-a71c66940a22?q=80&w=1000&auto=format&fit=crop"
+                                src="https://media.istockphoto.com/id/472105032/photo/auto-mechanic-working-on-a-car-in-his-garage.jpg?s=612x612&w=0&k=20&c=EyooxvXg5ufoSyzocedNdPnKCuhKzbvFQ0__snVIwto="
                                 alt="Mechanic at work"
                                 className="rounded-2xl shadow-xl relative z-10 object-cover aspect-[4/3] border border-border"
                             />
-
-                            {/* Floating Stats Badge */}
-                            <div className="absolute -bottom-8 -right-8 bg-card border border-border p-6 rounded-2xl shadow-2xl z-20 hidden md:block">
-                                <div className="text-4xl font-black text-primary mb-1">10+</div>
-                                <div className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Years Experience</div>
-                            </div>
                         </MotionDiv>
 
                         <MotionDiv initial="hidden" whileInView="visible" viewport={{ once: true }} variants={staggerContainer} className="space-y-6">

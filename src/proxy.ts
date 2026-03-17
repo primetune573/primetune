@@ -1,30 +1,19 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { type NextRequest } from "next/server";
+import { updateSession } from "@/utils/supabase/middleware";
 
-export function proxy(request: NextRequest) {
-    const path = request.nextUrl.pathname;
-
-    // Protect all /admin routes except /admin/login
-    if (path.startsWith('/admin') && !path.startsWith('/admin/login')) {
-        const adminAuth = request.cookies.get('admin_token')?.value;
-
-        // Very basic token check. In production, verify JWT via Supabase.
-        if (!adminAuth || adminAuth !== 'authenticated_admin_demo') {
-            return NextResponse.redirect(new URL('/admin/login', request.url));
-        }
-    }
-
-    // Redirect authenticated users away from login page
-    if (path.startsWith('/admin/login')) {
-        const adminAuth = request.cookies.get('admin_token')?.value;
-        if (adminAuth === 'authenticated_admin_demo') {
-            return NextResponse.redirect(new URL('/admin', request.url));
-        }
-    }
-
-    return NextResponse.next();
+export async function proxy(request: NextRequest) {
+    return await updateSession(request);
 }
 
 export const config = {
-    matcher: ['/admin/:path*'],
-}
+    matcher: [
+        /*
+         * Match all request paths except for the ones starting with:
+         * - _next/static (static files)
+         * - _next/image (image optimization files)
+         * - favicon.ico (favicon file)
+         * Feel free to modify this pattern to include more paths.
+         */
+        "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    ],
+};

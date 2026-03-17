@@ -274,7 +274,7 @@ export async function getAllBookings() {
         const { data, error } = await supabase
             .from('bookings')
             .select('*')
-            .order('booking_date', { ascending: false });
+            .order('created_at', { ascending: false });
 
         if (error) throw error;
 
@@ -285,6 +285,7 @@ export async function getAllBookings() {
             "Time": b.booking_time,
             "Customer": b.customer_name,
             "Phone": b.customer_phone,
+            "Email": b.customer_email,
             "Vehicle": `${b.car_brand} ${b.car_model} (${b.car_year})`,
             "Services": b.service_names_snapshot?.join(", "),
             "Total Price": b.total_price,

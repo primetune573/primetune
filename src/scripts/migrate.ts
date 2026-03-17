@@ -17,7 +17,7 @@ if (!serviceRoleKey || serviceRoleKey === 'YOUR_SUPABASE_SERVICE_ROLE_KEY') {
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-function isUUID(uuid) {
+function isUUID(uuid: string) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
 }
 
@@ -30,7 +30,7 @@ async function migrate() {
     if (fs.existsSync(servicesPath)) {
         const services = JSON.parse(fs.readFileSync(servicesPath, 'utf-8'));
         for (const svc of services) {
-            const data = {
+            const data: any = {
                 name: svc.name,
                 description: svc.summary || '',
                 price: svc.price,

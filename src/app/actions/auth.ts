@@ -1,10 +1,13 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
+import { createAdminClient } from "@/utils/supabase/admin";
 
 export async function adminLogin(formData: FormData) {
-    const email = formData.get("username") as string; // The login form uses 'username' but we'll use it as email for Supabase Auth
+    const email = formData.get("username") as string;
     const pass = formData.get("password") as string;
+
+    console.log(`[LOGIN ATTEMPT] Email: ${email}`);
 
     const supabase = await createClient();
 
@@ -14,22 +17,32 @@ export async function adminLogin(formData: FormData) {
     });
 
     if (authError) {
+        console.error(`[LOGIN AUTH ERROR] ${authError.message}`);
         return { success: false, error: authError.message };
     }
 
-    // Verify role in profiles table
-    const { data: profile, error: profileError } = await supabase
+    console.log(`[LOGIN AUTH SUCCESS] User ID: ${authData.user.id}`);
+
+    // Use admin client to verify role (bypasses RLS)
+    const adminSupabase = createAdminClient();
+    const { data: profile, error: profileError } = await adminSupabase
         .from('profiles')
         .select('role')
         .eq('id', authData.user.id)
         .single();
 
-    if (profileError || profile?.role !== 'admin') {
-        // If not admin, sign them back out
+    if (profileError) {
+        console.error(`[LOGIN PROFILE ERROR] ${profileError.message}`);
+        return { success: false, error: "Profile not found" };
+    }
+
+    if (profile?.role !== 'admin') {
+        console.warn(`[LOGIN UNAUTHORIZED] Role: ${profile?.role}`);
         await supabase.auth.signOut();
         return { success: false, error: "Unauthorized access" };
     }
 
+    console.log(`[LOGIN SUCCESS] Admin established`);
     return { success: true };
 }
 

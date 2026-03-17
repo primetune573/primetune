@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Clock, Trash2, CheckCircle, XCircle, Search, RefreshCw, AlertCircle, Phone, Car, Calendar } from "lucide-react";
+import { Clock, Trash2, CheckCircle, XCircle, Search, RefreshCw, AlertCircle, Phone, Car, Calendar, FileText } from "lucide-react";
 import {
     adminUpdateBookingStatus,
     adminCancelBooking,
     adminPermanentlyDeleteBooking,
     adminReactivateBooking,
 } from "@/app/actions/admin";
+import { generateInvoicePDF } from "@/utils/invoiceGenerator";
 
 const STATUS_STYLES: Record<string, string> = {
     pending: "bg-amber-500/10 text-amber-600 border-amber-200",
@@ -183,6 +184,7 @@ export default function BookingsClient({ bookings }: { bookings: any[] }) {
                                                             isLoading={isLoading}
                                                             act={act}
                                                             setCancelModal={setCancelModal}
+                                                            booking={b}
                                                         />
                                                     </div>
                                                 </td>
@@ -250,6 +252,7 @@ export default function BookingsClient({ bookings }: { bookings: any[] }) {
                                                 act={act}
                                                 setCancelModal={setCancelModal}
                                                 mobileFull
+                                                booking={b}
                                             />
                                         </div>
                                     </div>
@@ -300,9 +303,18 @@ export default function BookingsClient({ bookings }: { bookings: any[] }) {
     );
 }
 
-function ActionButtons({ bn, status, isLoading, act, setCancelModal, mobileFull }: any) {
+function ActionButtons({ bn, status, isLoading, act, setCancelModal, mobileFull, booking }: any) {
     return (
         <div className={`flex gap-2 ${mobileFull ? 'w-full' : ''}`}>
+            {status === "completed" && (
+                <button
+                    onClick={() => generateInvoicePDF(booking)}
+                    className={`flex-1 h-10 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl flex items-center justify-center gap-2 font-bold text-xs shadow-lg shadow-indigo-600/10 transition-all active:scale-95 ${mobileFull ? '' : 'px-3'}`}
+                    title="Download Invoice PDF"
+                >
+                    <FileText className="w-4 h-4" /> {(!mobileFull || mobileFull) && "Invoice"}
+                </button>
+            )}
             {status === "pending" && (
                 <button
                     disabled={isLoading}

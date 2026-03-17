@@ -1,6 +1,8 @@
 import { getAllBookings } from "@/app/actions/admin";
 import DashboardClient from "./DashboardClient";
 import { createClient } from "@/utils/supabase/server";
+import { isAdmin } from "@/app/actions/auth";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,10 @@ async function getServiceCount() {
 }
 
 export default async function AdminDashboard() {
+    if (!await isAdmin()) {
+        redirect("/admin/login");
+    }
+
     const [bookings, serviceCount] = await Promise.all([
         getAllBookings(),
         getServiceCount(),

@@ -16,7 +16,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     const handleLogout = async () => {
         await adminLogout();
-        router.push("/admin/login");
+        // Use window.location.href for a full page reload to ensure auth state is purged
+        window.location.href = "/admin/login";
     };
 
     const navItems = [

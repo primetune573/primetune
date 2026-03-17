@@ -1,5 +1,7 @@
 import { createClient } from "@/utils/supabase/server";
 import ServiceManager from "./ServiceManager";
+import { isAdmin } from "@/app/actions/auth";
+import { redirect } from "next/navigation";
 
 async function getServices() {
     const supabase = await createClient();
@@ -10,7 +12,7 @@ async function getServices() {
 
     if (error) return [];
 
-    return data.map(s => ({
+    return (data || []).map((s: any) => ({
         ...s,
         summary: s.description,
         image: s.image_url,
@@ -20,6 +22,10 @@ async function getServices() {
 }
 
 export default async function AdminServicesPage() {
+    if (!await isAdmin()) {
+        redirect("/admin/login");
+    }
+
     const services = await getServices();
 
     return (

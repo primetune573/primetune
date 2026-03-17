@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
+import { createAdminClient } from "@/utils/supabase/admin";
 import { getAvailableTimeSlots } from "@/lib/bookingLogic";
 
 /** Fetch availability blocks and format them for the logic */
@@ -18,26 +19,47 @@ async function getSupabaseAvailabilityBlocks() {
     };
 }
 
-/** Generate next sequential booking ID: pt-0001, pt-0002 ... from Supabase */
 async function generateBookingNumber(): Promise<string> {
-    const supabase = await createClient();
+    const supabase = createAdminClient(); // Use Admin Client to bypass RLS
+
+    // 1. Fetch all booking numbers (case-insensitive search for anything like pt-)
     const { data, error } = await supabase
         .from('bookings')
-        .select('booking_number')
-        .order('created_at', { ascending: false })
-        .limit(50); // Check recent ones to find the max
-
-    if (error || !data) return "pt-0001";
+        .select('booking_number');
 
     let max = 0;
-    for (const r of data) {
-        const num = r.booking_number as string;
-        if (num && num.toLowerCase().startsWith("pt-")) {
-            const n = parseInt(num.toLowerCase().replace("pt-", ""), 10);
-            if (!isNaN(n) && n > max) max = n;
+
+    if (data && data.length > 0) {
+        for (const r of data) {
+            const raw = (r.booking_number || "").toString();
+            // Use regex to find the FIRST sequence of digits in case of irregular prefixes/suffixes
+            const match = raw.match(/\d+/);
+            if (match) {
+                const n = parseInt(match[0], 10);
+                if (!isNaN(n) && n > max) max = n;
+            }
         }
     }
-    return `pt-${String(max + 1).padStart(4, "0")}`;
+
+    // 2. Generate the next candidate
+    const nextNum = max + 1;
+    let formatted = `pt-${String(nextNum).padStart(4, "0")}`;
+
+    // 3. VERIFY & RETRY: If this number exists (due to a race condition or manual entry),
+    // we jump to a randomized string to guarantee a successful insert.
+    const { data: existing } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('booking_number', formatted)
+        .maybeSingle();
+
+    if (existing) {
+        // High-collision backup: Append a unique timestamp-based segment
+        const stamp = Date.now().toString(36).slice(-3);
+        formatted = `${formatted}-${stamp}`;
+    }
+
+    return formatted;
 }
 
 /** Returns detailed available slots (including reasons for blocks) */
