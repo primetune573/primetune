@@ -2,6 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { cache } from "react";
 
 export async function adminLogin(formData: FormData) {
     const email = formData.get("username") as string;
@@ -52,8 +53,9 @@ export async function adminLogout() {
     return { success: true };
 }
 
-/** Check if the current user is an authenticated admin */
-export async function isAdmin() {
+
+/** Check if the current user is an authenticated admin - Cached per request */
+export const isAdmin = cache(async () => {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return false;
@@ -65,4 +67,4 @@ export async function isAdmin() {
         .single();
 
     return profile?.role === 'admin';
-}
+});
