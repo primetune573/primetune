@@ -65,21 +65,18 @@ export default async function Home() {
                 whileTap={{ scale: 0.98 }}
                 className="relative"
               >
-                {/* Continuous Breathing Glow */}
+                {/* Optimized Breathing Glow using opacity instead of boxShadow property */}
                 <MotionDiv
                   animate={{
-                    boxShadow: [
-                      "0 0 15px rgba(220, 38, 38, 0.4)",
-                      "0 0 30px rgba(220, 38, 38, 0.7)",
-                      "0 0 15px rgba(220, 38, 38, 0.4)",
-                    ],
+                    opacity: [0.4, 1, 0.4],
+                    scale: [1, 1.05, 1],
                   }}
                   transition={{
-                    duration: 2,
+                    duration: 3,
                     repeat: Infinity,
                     ease: "easeInOut",
                   }}
-                  className="absolute inset-0 rounded-lg pointer-events-none"
+                  className="absolute inset-0 rounded-lg pointer-events-none bg-primary/20 blur-xl"
                 />
 
                 <Link
@@ -222,11 +219,11 @@ export default async function Home() {
               variants={fadeIn}
               className="relative"
             >
-              <div className="absolute inset-x-0 -bottom-10 h-3/4 bg-primary/30 blur-[80px] rounded-full scale-110 z-0" />
+              <div className="absolute inset-x-0 -bottom-10 h-3/4 bg-primary/20 blur-[60px] rounded-full scale-110 z-0" />
               <MotionDiv
-                animate={{ y: [0, -15, 0] }}
-                transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-                className="relative z-10"
+                animate={{ y: [0, -10, 0] }}
+                transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+                className="relative z-10 will-change-transform"
               >
                 <img
                   src="https://lh3.googleusercontent.com/gps-cs-s/AHVAwerIfumCcYbUh1W-FGzoKwDU9LdGNPSyJt5kltyOsccN_ZBKNzQuyfaxLczxeM0B_AnINXOFooZLlX_RvufZB0xtZ10YokNRu2sH_ecNbUaytilzLX5Kd3WM12ta34iTs8cjR8Fh-S54RkM=s1360-w1360-h1020-rw"
@@ -259,7 +256,13 @@ export default async function Home() {
             </p>
           </MotionDiv>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          <MotionDiv
+            variants={staggerContainer}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-50px" }}
+            className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12"
+          >
             {[
               {
                 text: "Professional and knowledgeable staff. Fair pricing with no hidden charges. Friendly, reliable customer support — exactly what you want from a workshop!",
@@ -276,9 +279,6 @@ export default async function Home() {
             ].map((review, i) => (
               <MotionDiv
                 key={i}
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true }}
                 variants={fadeIn}
                 className="relative bg-card border border-border rounded-2xl p-8 text-left flex flex-col group hover:border-primary/60 hover:shadow-xl hover:shadow-primary/5 transition-all duration-300"
               >
@@ -307,7 +307,7 @@ export default async function Home() {
                 </div>
               </MotionDiv>
             ))}
-          </div>
+          </MotionDiv>
 
           <MotionDiv initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeIn}>
             <a

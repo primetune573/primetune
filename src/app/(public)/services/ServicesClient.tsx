@@ -33,8 +33,8 @@ export default function ServicesClient({ initialServices }: { initialServices: a
                 </div>
             </section>
 
-            {/* Filter and Search */}
-            <section className="py-8 bg-background sticky top-[72px] z-40 border-b border-border backdrop-blur-md bg-background/90">
+            {/* Filter and Search - Optimized by removing backdrop-blur from sticky interaction */}
+            <section className="py-8 bg-background sticky top-[72px] z-40 border-b border-border bg-background shadow-sm will-change-transform">
                 <div className="container mx-auto px-4 max-w-7xl flex flex-col md:flex-row justify-between items-center gap-4">
 
                     <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 w-full md:w-auto scrollbar-hide">

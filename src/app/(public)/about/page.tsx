@@ -32,8 +32,8 @@ export default function AboutUsPage() {
                 <div className="container mx-auto px-4 max-w-7xl">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
 
-                        <MotionDiv initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeIn} className="relative">
-                            <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full translate-x-4 translate-y-4" />
+                        <MotionDiv initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeIn} className="relative will-change-transform">
+                            <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full translate-x-4 translate-y-4" />
                             <img
                                 src="https://media.istockphoto.com/id/472105032/photo/auto-mechanic-working-on-a-car-in-his-garage.jpg?s=612x612&w=0&k=20&c=EyooxvXg5ufoSyzocedNdPnKCuhKzbvFQ0__snVIwto="
                                 alt="Mechanic at work"
@@ -74,13 +74,19 @@ export default function AboutUsPage() {
                         </p>
                     </MotionDiv>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <MotionDiv
+                        variants={staggerContainer}
+                        initial="hidden"
+                        whileInView="visible"
+                        viewport={{ once: true, margin: "-50px" }}
+                        className="grid grid-cols-1 md:grid-cols-3 gap-8"
+                    >
                         {[
                             { icon: Trophy, title: "Certified Expertise", desc: "Our technicians hold advanced certifications and undergo continuous training in modern vehicle electronics and mechanics." },
                             { icon: Wrench, title: "Premium Tools", desc: "We utilize laser-guided alignment machines, high-end OBD2 scanners, and specialized factory tools." },
                             { icon: Users, title: "Customer First", desc: "Honest communication. We never replace a part unless it's strictly necessary and we show you exactly why." }
                         ].map((item, i) => (
-                            <MotionDiv key={i} initial="hidden" whileInView="visible" viewport={{ once: true }} transition={{ delay: i * 0.2 }} variants={fadeIn} className="bg-background border border-border p-8 rounded-2xl hover:border-primary transition-colors text-center group">
+                            <MotionDiv key={i} variants={fadeIn} className="bg-background border border-border p-8 rounded-2xl hover:border-primary transition-colors text-center group">
                                 <div className="w-16 h-16 bg-secondary/50 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:bg-primary/20 group-hover:scale-110 transition-all">
                                     <item.icon className="w-8 h-8 text-primary" />
                                 </div>
@@ -88,13 +94,13 @@ export default function AboutUsPage() {
                                 <p className="text-muted-foreground">{item.desc}</p>
                             </MotionDiv>
                         ))}
-                    </div>
+                    </MotionDiv>
                 </div>
             </section>
 
             {/* Service Commitment */}
             <section className="py-24 relative overflow-hidden bg-primary/10">
-                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1599256621730-535171e28e50?q=80&w=2000&auto=format&fit=crop')] opacity-5 bg-cover bg-fixed bg-center" />
+                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1599256621730-535171e28e50?q=80&w=2000&auto=format&fit=crop')] opacity-5 bg-cover bg-center" />
                 <div className="container mx-auto px-4 max-w-4xl text-center relative z-10">
                     <MotionDiv initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeIn}>
                         <h2 className="text-3xl md:text-5xl font-extrabold text-foreground mb-8">The PrimeTune Promise</h2>
