@@ -16,6 +16,7 @@ const checkoutSchema = z.object({
     carBrand: z.string().min(2, "Car brand is required"),
     carModel: z.string().min(2, "Car model is required"),
     carYear: z.string().min(4, "Valid year required").max(4),
+    carPlate: z.string().min(1, "Number plate is required"),
     notes: z.string().optional(),
 });
 
@@ -46,6 +47,7 @@ export default function CartPage() {
                 car_brand: data.carBrand,
                 car_model: data.carModel,
                 car_year: data.carYear,
+                car_plate: data.carPlate,
                 service_ids: items.map(i => i.serviceId),
                 service_names_snapshot: items.map(i => i.name),
                 price_snapshot: getTotalPrice(),
@@ -78,7 +80,7 @@ export default function CartPage() {
 
             // Generate WhatsApp msg
             const lineItems = items.map(i => `- ${i.name} (LKR ${i.price.toLocaleString()}) on ${i.selectedDate} at ${getRangeLabel(i.selectedTime, i.duration)}`).join("\n");
-            const whatsappMsg = `*New Booking from PrimeTune Web*\n\n*Customer:* ${data.fullName}\n*Phone:* ${data.phone}\n*Vehicle:* ${data.carYear} ${data.carBrand} ${data.carModel}\n\n*Services Requested:*\n${lineItems}\n\n*Total Estimate:* LKR ${getTotalPrice().toLocaleString()}\n*Notes:* ${data.notes || 'None'}`;
+            const whatsappMsg = `*New Booking from PrimeTune Web*\n\n*Customer:* ${data.fullName}\n*Phone:* ${data.phone}\n*Vehicle:* ${data.carYear} ${data.carBrand} ${data.carModel}\n*Plate:* ${data.carPlate}\n\n*Services Requested:*\n${lineItems}\n\n*Total Estimate:* LKR ${getTotalPrice().toLocaleString()}\n*Notes:* ${data.notes || 'None'}`;
 
             bookingPayload.whatsapp_message = whatsappMsg;
 
@@ -234,14 +236,25 @@ export default function CartPage() {
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <label className="block text-sm font-semibold text-foreground mb-1.5">Manufacturing Year *</label>
-                                        <input
-                                            {...register("carYear")}
-                                            className={`w-full bg-input border ${errors.carYear ? 'border-destructive' : 'border-border'} rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary outline-none transition-all`}
-                                            placeholder="e.g. 2018"
-                                        />
-                                        {errors.carYear && <p className="text-destructive text-xs mt-1">{errors.carYear.message}</p>}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-semibold text-foreground mb-1.5">Manufacturing Year *</label>
+                                            <input
+                                                {...register("carYear")}
+                                                className={`w-full bg-input border ${errors.carYear ? 'border-destructive' : 'border-border'} rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary outline-none transition-all`}
+                                                placeholder="e.g. 2018"
+                                            />
+                                            {errors.carYear && <p className="text-destructive text-xs mt-1">{errors.carYear.message}</p>}
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-semibold text-foreground mb-1.5">Number Plate *</label>
+                                            <input
+                                                {...register("carPlate")}
+                                                className={`w-full bg-input border ${errors.carPlate ? 'border-destructive' : 'border-border'} rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary outline-none transition-all uppercase`}
+                                                placeholder="e.g. WP CAE-1234"
+                                            />
+                                            {errors.carPlate && <p className="text-destructive text-xs mt-1">{errors.carPlate.message}</p>}
+                                        </div>
                                     </div>
 
                                     <div>

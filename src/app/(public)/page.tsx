@@ -65,10 +65,10 @@ export default async function Home() {
                 whileTap={{ scale: 0.98 }}
                 className="relative"
               >
-                {/* Optimized Breathing Glow using opacity instead of boxShadow property */}
+                {/* Optimized Breathing Glow using opacity and scale without blur */}
                 <MotionDiv
                   animate={{
-                    opacity: [0.4, 1, 0.4],
+                    opacity: [0.2, 0.6, 0.2],
                     scale: [1, 1.05, 1],
                   }}
                   transition={{
@@ -76,7 +76,7 @@ export default async function Home() {
                     repeat: Infinity,
                     ease: "easeInOut",
                   }}
-                  className="absolute inset-0 rounded-lg pointer-events-none bg-primary/20 blur-xl"
+                  className="absolute inset-0 rounded-lg pointer-events-none bg-primary/20 will-change-transform"
                 />
 
                 <Link
@@ -219,7 +219,7 @@ export default async function Home() {
               variants={fadeIn}
               className="relative"
             >
-              <div className="absolute inset-x-0 -bottom-10 h-3/4 bg-primary/20 blur-[60px] rounded-full scale-110 z-0" />
+              <div className="absolute inset-x-0 -bottom-10 h-3/4 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-primary/30 via-primary/10 to-transparent z-0 pointer-events-none" />
               <MotionDiv
                 animate={{ y: [0, -10, 0] }}
                 transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}

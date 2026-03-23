@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useTransition } from "react";
 import { Clock, Trash2, CheckCircle, XCircle, Search, RefreshCw, AlertCircle, Phone, Car, Calendar, FileText } from "lucide-react";
 import {
     adminUpdateBookingStatus,
@@ -21,10 +21,24 @@ export default function BookingsClient({ bookings }: { bookings: any[] }) {
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState("all");
     const [loading, setLoading] = useState<string | null>(null);
+    const [isPending, startTransition] = useTransition();
     const [cancelModal, setCancelModal] = useState<{ open: boolean; bookingNumber: string; reason: string }>({
         open: false,
         bookingNumber: "",
         reason: "",
+    });
+    const [completionModal, setCompletionModal] = useState<{
+        open: boolean;
+        booking: any;
+        discountType: 'none' | 'amount' | 'percentage';
+        discountValue: number;
+        parts: { name: string; qty: number; unitPrice: number }[];
+    }>({
+        open: false,
+        booking: null,
+        discountType: 'none',
+        discountValue: 0,
+        parts: []
     });
 
     const filtered = useMemo(() => {
@@ -35,6 +49,8 @@ export default function BookingsClient({ bookings }: { bookings: any[] }) {
                 (b["Booking Number"] || "").toLowerCase().includes(q) ||
                 (b["Customer"] || "").toLowerCase().includes(q) ||
                 (b["Phone"] || "").toLowerCase().includes(q) ||
+                (b["Car"] || "").toLowerCase().includes(q) ||
+                (b["Plate"] || "").toLowerCase().includes(q) ||
                 (b["Cancellation Reason"] || "").toLowerCase().includes(q);
             const matchStatus =
                 statusFilter === "all" || b["Status"] === statusFilter;
@@ -42,14 +58,16 @@ export default function BookingsClient({ bookings }: { bookings: any[] }) {
         });
     }, [bookings, search, statusFilter]);
 
-    const act = async (id: string, fn: () => Promise<any>) => {
+    const act = (id: string, fn: () => Promise<any>) => {
         setLoading(id);
-        try {
-            const res = await fn();
-            if (!res.success) alert(res.error);
-        } finally {
-            setLoading(null);
-        }
+        startTransition(async () => {
+            try {
+                const res = await fn();
+                if (!res?.success) alert(res?.error);
+            } finally {
+                setLoading(null);
+            }
+        });
     };
 
     const handleCancelSubmit = async () => {
@@ -59,6 +77,34 @@ export default function BookingsClient({ bookings }: { bookings: any[] }) {
         }
         await act(cancelModal.bookingNumber, () => adminCancelBooking(cancelModal.bookingNumber, cancelModal.reason));
         setCancelModal({ open: false, bookingNumber: "", reason: "" });
+    };
+
+    const handleCompletionSubmit = async () => {
+        const b = completionModal.booking;
+        const originalLabor = parseFloat(b["Total Price"] || "0");
+        let finalLabor = originalLabor;
+
+        if (completionModal.discountType === 'amount') {
+            finalLabor = Math.max(0, originalLabor - completionModal.discountValue);
+        } else if (completionModal.discountType === 'percentage') {
+            finalLabor = Math.max(0, originalLabor * (1 - completionModal.discountValue / 100));
+        }
+
+        const partsTotal = completionModal.parts.reduce((sum, p) => sum + (p.qty * p.unitPrice), 0);
+        const finalTotal = finalLabor + partsTotal;
+
+        await act(b["Booking Number"], () =>
+            adminUpdateBookingStatus("", b["Booking Number"], "completed", undefined, {
+                original_labor_price: originalLabor,
+                discount_type: completionModal.discountType,
+                discount_value: completionModal.discountValue,
+                final_labor_price: finalLabor,
+                parts_total: partsTotal,
+                final_total: finalTotal,
+                extra_items: completionModal.parts
+            })
+        );
+        setCompletionModal(prev => ({ ...prev, open: false }));
     };
 
     const getRangeLabel = (startTime: string, duration: number) => {
@@ -161,6 +207,13 @@ export default function BookingsClient({ bookings }: { bookings: any[] }) {
                                                     <div className={`text-xs font-medium flex items-center gap-1.5 ${isCancelled ? "text-red-400" : "text-muted-foreground"}`}>
                                                         <Car className="w-3.5 h-3.5" /> {b["Car"]}
                                                     </div>
+                                                    {b["Plate"] && (
+                                                        <div className="mt-1">
+                                                            <span className="bg-secondary px-2 py-0.5 rounded text-[10px] font-black tracking-wider border border-border">
+                                                                {b["Plate"]}
+                                                            </span>
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <div className={`truncate max-w-[180px] font-medium ${isCancelled ? "text-red-300" : "text-foreground"}`}>{b["Services"]}</div>
@@ -184,6 +237,7 @@ export default function BookingsClient({ bookings }: { bookings: any[] }) {
                                                             isLoading={isLoading}
                                                             act={act}
                                                             setCancelModal={setCancelModal}
+                                                            setCompletionModal={setCompletionModal}
                                                             booking={b}
                                                         />
                                                     </div>
@@ -226,6 +280,7 @@ export default function BookingsClient({ bookings }: { bookings: any[] }) {
                                             <div className="space-y-1">
                                                 <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Vehicle</p>
                                                 <p className={`font-bold text-sm leading-tight ${isCancelled ? "text-red-400" : ""}`}>{b["Car"]}</p>
+                                                {b["Plate"] && <span className="text-[10px] font-black bg-secondary px-2 py-0.5 rounded border border-border inline-block mt-0.5">{b["Plate"]}</span>}
                                             </div>
                                         </div>
 
@@ -251,6 +306,7 @@ export default function BookingsClient({ bookings }: { bookings: any[] }) {
                                                 isLoading={isLoading}
                                                 act={act}
                                                 setCancelModal={setCancelModal}
+                                                setCompletionModal={setCompletionModal}
                                                 mobileFull
                                                 booking={b}
                                             />
@@ -263,38 +319,222 @@ export default function BookingsClient({ bookings }: { bookings: any[] }) {
                 )}
             </div>
 
-            {/* Cancellation Modal */}
+            {/* Completion Modal */}
+            {completionModal.open && completionModal.booking && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+                    <div className="bg-card border border-border w-full max-w-2xl rounded-3xl shadow-2xl p-6 md:p-8 my-8 animate-in zoom-in-95 duration-300">
+                        <div className="flex justify-between items-start mb-6">
+                            <div>
+                                <h3 className="text-2xl font-black text-foreground tracking-tight">Complete Job: {completionModal.booking["Booking Number"]}</h3>
+                                <p className="text-muted-foreground text-sm font-medium">Finalize pricing, apply discounts, and add parts.</p>
+                            </div>
+                            <button onClick={() => setCompletionModal(prev => ({ ...prev, open: false }))} className="p-2 hover:bg-secondary rounded-full">
+                                <XCircle className="w-6 h-6 text-muted-foreground" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-8">
+                            {/* Labor Section */}
+                            <div className="bg-muted/30 p-5 rounded-2xl border border-border">
+                                <h4 className="text-xs font-black uppercase tracking-widest text-primary mb-4 flex items-center gap-2">
+                                    <Clock className="w-4 h-4" /> Labor & Discounts
+                                </h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Service Base Price (LKR)</label>
+                                        <div className="text-2xl font-black text-foreground tabular-nums">
+                                            {parseFloat(completionModal.booking["Total Price"] || "0").toLocaleString()}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Apply Discount</label>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setCompletionModal(p => ({ ...p, discountType: 'none', discountValue: 0 }))}
+                                                className={`flex-1 py-2 rounded-lg text-[10px] font-black border transition-all ${completionModal.discountType === 'none' ? 'bg-primary text-white border-primary' : 'bg-card border-border'}`}
+                                            >NONE</button>
+                                            <button
+                                                onClick={() => setCompletionModal(p => ({ ...p, discountType: 'amount', discountValue: 0 }))}
+                                                className={`flex-1 py-2 rounded-lg text-[10px] font-black border transition-all ${completionModal.discountType === 'amount' ? 'bg-primary text-white border-primary' : 'bg-card border-border'}`}
+                                            >AMOUNT</button>
+                                            <button
+                                                onClick={() => setCompletionModal(p => ({ ...p, discountType: 'percentage', discountValue: 0 }))}
+                                                className={`flex-1 py-2 rounded-lg text-[10px] font-black border transition-all ${completionModal.discountType === 'percentage' ? 'bg-primary text-white border-primary' : 'bg-card border-border'}`}
+                                            >% PERCENT</button>
+                                        </div>
+                                        {completionModal.discountType !== 'none' && (
+                                            <div className="relative">
+                                                <input
+                                                    type="number"
+                                                    value={completionModal.discountValue || ""}
+                                                    onChange={e => setCompletionModal(p => ({ ...p, discountValue: parseFloat(e.target.value) || 0 }))}
+                                                    placeholder={completionModal.discountType === 'amount' ? "Enter Amount..." : "Enter Percentage..."}
+                                                    className="w-full bg-card border border-border rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none"
+                                                />
+                                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-black text-muted-foreground">
+                                                    {completionModal.discountType === 'amount' ? "LKR" : "%"}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Parts Section */}
+                            <div className="space-y-4">
+                                <div className="flex justify-between items-center">
+                                    <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                                        <Car className="w-4 h-4" /> Parts & Extra Items
+                                    </h4>
+                                    <button
+                                        onClick={() => setCompletionModal(p => ({ ...p, parts: [...p.parts, { name: "", qty: 1, unitPrice: 0 }] }))}
+                                        className="text-[10px] font-black uppercase tracking-widest bg-secondary hover:bg-primary hover:text-white px-3 py-1.5 rounded-lg border border-border transition-all"
+                                    >+ Add Part</button>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {completionModal.parts.length === 0 ? (
+                                        <div className="text-center py-6 border border-dashed border-border rounded-2xl bg-muted/10">
+                                            <p className="text-[10px] font-black text-muted-foreground uppercase">No extra parts added.</p>
+                                        </div>
+                                    ) : (
+                                        completionModal.parts.map((part, idx) => (
+                                            <div key={idx} className="grid grid-cols-12 gap-3 items-end animate-in slide-in-from-left-2 duration-200">
+                                                <div className="col-span-12 md:col-span-5 space-y-1.5">
+                                                    <label className="text-[9px] font-black text-muted-foreground uppercase ml-1">Part Name</label>
+                                                    <input
+                                                        value={part.name}
+                                                        onChange={e => {
+                                                            const newParts = [...completionModal.parts];
+                                                            newParts[idx].name = e.target.value;
+                                                            setCompletionModal(p => ({ ...p, parts: newParts }));
+                                                        }}
+                                                        placeholder="e.g. Oil Filter"
+                                                        className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-2 text-sm font-bold outline-none"
+                                                    />
+                                                </div>
+                                                <div className="col-span-4 md:col-span-2 space-y-1.5">
+                                                    <label className="text-[9px] font-black text-muted-foreground uppercase ml-1">Qty</label>
+                                                    <input
+                                                        type="number"
+                                                        value={part.qty}
+                                                        onChange={e => {
+                                                            const newParts = [...completionModal.parts];
+                                                            newParts[idx].qty = parseInt(e.target.value) || 0;
+                                                            setCompletionModal(p => ({ ...p, parts: newParts }));
+                                                        }}
+                                                        className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-2 text-sm font-bold outline-none"
+                                                    />
+                                                </div>
+                                                <div className="col-span-6 md:col-span-4 space-y-1.5">
+                                                    <label className="text-[9px] font-black text-muted-foreground uppercase ml-1">Unit Price</label>
+                                                    <input
+                                                        type="number"
+                                                        value={part.unitPrice}
+                                                        onChange={e => {
+                                                            const newParts = [...completionModal.parts];
+                                                            newParts[idx].unitPrice = parseFloat(e.target.value) || 0;
+                                                            setCompletionModal(p => ({ ...p, parts: newParts }));
+                                                        }}
+                                                        className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-2 text-sm font-bold outline-none text-right"
+                                                    />
+                                                </div>
+                                                <div className="col-span-2 md:col-span-1 flex justify-center pb-2">
+                                                    <button
+                                                        onClick={() => {
+                                                            const newParts = completionModal.parts.filter((_, i) => i !== idx);
+                                                            setCompletionModal(p => ({ ...p, parts: newParts }));
+                                                        }}
+                                                        className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                                                    ><Trash2 className="w-4 h-4" /></button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Summary Footer */}
+                            <div className="border-t border-border pt-6 space-y-2">
+                                <div className="flex justify-between text-muted-foreground text-sm font-medium">
+                                    <span>Labor After Discount:</span>
+                                    <span className="tabular-nums">LKR {(() => {
+                                        const orig = parseFloat(completionModal.booking["Total Price"] || "0");
+                                        let final = orig;
+                                        if (completionModal.discountType === 'amount') final -= completionModal.discountValue;
+                                        if (completionModal.discountType === 'percentage') final *= (1 - completionModal.discountValue / 100);
+                                        return Math.max(0, final).toLocaleString();
+                                    })()}</span>
+                                </div>
+                                <div className="flex justify-between text-muted-foreground text-sm font-medium">
+                                    <span>Parts Total:</span>
+                                    <span className="tabular-nums">LKR {completionModal.parts.reduce((s, p) => s + (p.qty * p.unitPrice), 0).toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between items-center pt-2">
+                                    <span className="text-xl font-black text-foreground uppercase tracking-tight">Final Payable Total:</span>
+                                    <span className="text-3xl font-black text-primary tabular-nums">LKR {(() => {
+                                        const orig = parseFloat(completionModal.booking["Total Price"] || "0");
+                                        let finalLabor = orig;
+                                        if (completionModal.discountType === 'amount') finalLabor -= completionModal.discountValue;
+                                        if (completionModal.discountType === 'percentage') finalLabor *= (1 - completionModal.discountValue / 100);
+                                        const parts = completionModal.parts.reduce((s, p) => s + (p.qty * p.unitPrice), 0);
+                                        return Math.max(0, finalLabor + parts).toLocaleString();
+                                    })()}</span>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-4 pt-4">
+                                <button
+                                    onClick={() => setCompletionModal(prev => ({ ...prev, open: false }))}
+                                    className="flex-1 py-4 border border-border rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-muted transition-colors"
+                                >Cancel</button>
+                                <button
+                                    onClick={handleCompletionSubmit}
+                                    className="flex-1 py-4 bg-green-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-green-700 shadow-xl shadow-green-600/20 transition-all active:scale-95"
+                                >Confirm & Complete Job</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Cancel Modal */}
             {cancelModal.open && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-card border border-border w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-300">
-                        <div>
-                            <h3 className="text-xl font-black text-foreground">Cancel Booking {cancelModal.bookingNumber}</h3>
-                            <p className="text-muted-foreground text-sm mt-1">Please provide a reason for cancelling this appointment. This will be visible in reports.</p>
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="bg-card border border-border w-full max-w-md rounded-3xl shadow-2xl p-6 md:p-8 animate-in zoom-in-95 duration-300">
+                        <div className="flex justify-between items-start mb-6">
+                            <div>
+                                <h3 className="text-xl font-black text-foreground tracking-tight">Cancel Booking</h3>
+                                <p className="text-muted-foreground text-sm font-medium">Please provide a reason for cancelling {cancelModal.bookingNumber}.</p>
+                            </div>
+                            <button onClick={() => setCancelModal({ ...cancelModal, open: false })} className="p-2 hover:bg-secondary rounded-full">
+                                <XCircle className="w-6 h-6 text-muted-foreground" />
+                            </button>
                         </div>
 
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Cancellation Reason</label>
-                            <textarea
-                                value={cancelModal.reason}
-                                onChange={(e) => setCancelModal(prev => ({ ...prev, reason: e.target.value }))}
-                                placeholder="e.g., Customer requested rescheduling, Parts unavailable, No-show..."
-                                className="w-full bg-secondary border border-border rounded-2xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 min-h-[120px]"
-                            />
-                        </div>
+                        <div className="space-y-6">
+                            <div className="space-y-2">
+                                <label className="text-xs font-black uppercase tracking-widest text-muted-foreground ml-1">Reason for Cancellation</label>
+                                <textarea
+                                    value={cancelModal.reason}
+                                    onChange={(e) => setCancelModal({ ...cancelModal, reason: e.target.value })}
+                                    rows={4}
+                                    placeholder="e.g. Customer requested cancellation via phone..."
+                                    className="w-full bg-secondary/50 border border-border rounded-2xl px-5 py-4 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/30 outline-none resize-none transition-shadow"
+                                />
+                            </div>
 
-                        <div className="flex gap-3 pt-2">
-                            <button
-                                onClick={() => setCancelModal({ open: false, bookingNumber: "", reason: "" })}
-                                className="flex-1 px-4 py-3 border border-border rounded-xl font-bold text-sm hover:bg-muted transition-colors"
-                            >
-                                Nevermind
-                            </button>
-                            <button
-                                onClick={handleCancelSubmit}
-                                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 shadow-lg shadow-red-600/20 transition-all active:scale-95"
-                            >
-                                Confirm Cancellation
-                            </button>
+                            <div className="flex gap-4">
+                                <button
+                                    onClick={() => setCancelModal({ ...cancelModal, open: false })}
+                                    className="flex-1 py-4 border border-border rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-muted transition-colors font-sans"
+                                >Keep Booking</button>
+                                <button
+                                    onClick={handleCancelSubmit}
+                                    disabled={!cancelModal.reason.trim()}
+                                    className="flex-1 py-4 bg-destructive text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-700 shadow-xl shadow-destructive/20 transition-all active:scale-95 disabled:opacity-50"
+                                >Confirm Cancel</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -303,7 +543,7 @@ export default function BookingsClient({ bookings }: { bookings: any[] }) {
     );
 }
 
-function ActionButtons({ bn, status, isLoading, act, setCancelModal, mobileFull, booking }: any) {
+function ActionButtons({ bn, status, isLoading, act, setCancelModal, setCompletionModal, mobileFull, booking }: any) {
     return (
         <div className={`flex gap-2 ${mobileFull ? 'w-full' : ''}`}>
             {status === "completed" && (
@@ -327,7 +567,13 @@ function ActionButtons({ bn, status, isLoading, act, setCancelModal, mobileFull,
             {status === "confirmed" && (
                 <button
                     disabled={isLoading}
-                    onClick={() => act(bn, () => adminUpdateBookingStatus("", bn, "completed"))}
+                    onClick={() => setCompletionModal({
+                        open: true,
+                        booking: booking,
+                        discountType: 'none',
+                        discountValue: 0,
+                        parts: []
+                    })}
                     className={`flex-1 h-10 bg-green-600 text-white hover:bg-green-700 rounded-xl flex items-center justify-center gap-2 font-bold text-xs shadow-lg shadow-green-600/10 transition-all active:scale-95 disabled:opacity-50 ${mobileFull ? '' : 'px-3'}`}
                 >
                     <CheckCircle className="w-4 h-4" /> {!mobileFull && "Complete"}

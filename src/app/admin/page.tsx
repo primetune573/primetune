@@ -1,8 +1,10 @@
+import { isAdmin } from "@/app/actions/auth";
+import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import { StatsSkeleton, CalendarSkeleton } from "@/components/admin/AdminSkeletons";
 import { getAllBookings } from "@/app/actions/admin";
 import DashboardClient from "./DashboardClient";
 import { createClient } from "@/utils/supabase/server";
-import { isAdmin } from "@/app/actions/auth";
-import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -17,15 +19,38 @@ async function getServiceCount() {
 }
 
 export default async function AdminDashboard() {
-    if (!await isAdmin()) {
+    const admin = await isAdmin();
+
+    if (!admin) {
         redirect("/admin/login");
     }
 
+    return (
+        <div className="space-y-8">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                <div>
+                    <h1 className="text-4xl font-black text-foreground tracking-tight">Dashboard Overview</h1>
+                    <p className="text-muted-foreground mt-1 font-medium italic">Instantly fresh. Optimized for speed.</p>
+                </div>
+            </div>
+
+            <Suspense fallback={
+                <div className="space-y-8">
+                    <StatsSkeleton />
+                    <CalendarSkeleton />
+                </div>
+            }>
+                <DashboardDataLoader />
+            </Suspense>
+        </div>
+    );
+}
+
+async function DashboardDataLoader() {
     const [bookings, serviceCount] = await Promise.all([
-        getAllBookings(),
+        getAllBookings(true),
         getServiceCount(),
     ]);
 
-    // Bookings are already ordered in getAllBookings, but we'll ensure consistency
     return <DashboardClient bookings={bookings} serviceCount={serviceCount} />;
 }

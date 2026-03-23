@@ -1,7 +1,9 @@
-import { createClient } from "@/utils/supabase/server";
-import ServiceManager from "./ServiceManager";
 import { isAdmin } from "@/app/actions/auth";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import { TableSkeleton } from "@/components/admin/AdminSkeletons";
+import { createClient } from "@/utils/supabase/server";
+import ServiceManager from "./ServiceManager";
 
 async function getServices() {
     const supabase = await createClient();
@@ -22,15 +24,24 @@ async function getServices() {
 }
 
 export default async function AdminServicesPage() {
-    if (!await isAdmin()) {
+    const admin = await isAdmin();
+
+    if (!admin) {
         redirect("/admin/login");
     }
 
-    const services = await getServices();
-
     return (
-        <div className="animate-in fade-in duration-500">
-            <ServiceManager initialServices={services} />
+        <div className="space-y-6">
+            <h1 className="text-3xl font-black text-foreground tracking-tight mb-6">Services Catalog</h1>
+
+            <Suspense fallback={<TableSkeleton />}>
+                <ServicesDataLoader />
+            </Suspense>
         </div>
     );
+}
+
+async function ServicesDataLoader() {
+    const services = await getServices();
+    return <ServiceManager initialServices={services} />;
 }

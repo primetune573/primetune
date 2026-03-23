@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { ChevronLeft, ChevronRight, ArrowRight, Wrench, Download, LogOut } from "lucide-react";
+import { ChevronLeft, ChevronRight, ArrowRight, Wrench, Download, LogOut, X, Receipt } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { adminLogout } from "@/app/actions/auth";
@@ -41,6 +41,7 @@ export default function DashboardClient({ bookings, serviceCount }: { bookings: 
     const [viewYear, setViewYear] = useState(today.getFullYear());
     const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-indexed
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const [isRevenueModalOpen, setIsRevenueModalOpen] = useState(false);
 
     const handleLogout = async () => {
         await adminLogout();
@@ -51,7 +52,12 @@ export default function DashboardClient({ bookings, serviceCount }: { bookings: 
     const pendingCount = bookings.filter(b => b["Status"] === "pending").length;
     const completedRevenue = bookings
         .filter(b => b["Status"] === "completed")
-        .reduce((s, b) => s + (parseFloat(b["Total Price"]) || 0), 0);
+        .reduce((s, b) => s + (parseFloat(b["Final Total"] || b["Total Price"]) || 0), 0);
+
+    const completedJobs = useMemo(() => {
+        return bookings.filter(b => b["Status"] === "completed")
+            .sort((a, b) => new Date(b["Date"]).getTime() - new Date(a["Date"]).getTime());
+    }, [bookings]);
 
     // Build a map: dateStr → bookings[]
     const bookingsByDate = useMemo(() => {
@@ -115,13 +121,33 @@ export default function DashboardClient({ bookings, serviceCount }: { bookings: 
 
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {statCards.map((c, i) => (
-                    <div key={i} className="bg-card border border-border p-6 rounded-3xl shadow-sm hover:border-primary/30 transition-all hover:shadow-xl hover:shadow-primary/5 group">
-                        <p className="text-muted-foreground text-[10px] uppercase font-black tracking-widest mb-1 group-hover:text-primary transition-colors">{c.label}</p>
-                        <h3 className={`text-4xl font-black ${c.color} tracking-tighter`}>{c.value}</h3>
-                        <p className="text-xs text-muted-foreground mt-2 font-medium bg-muted/50 py-1 px-2 rounded-lg inline-block">{c.sub}</p>
-                    </div>
-                ))}
+                {statCards.map((c, i) => {
+                    const CardContent = (
+                        <div className="bg-card border border-border p-6 rounded-3xl shadow-sm hover:border-primary/30 transition-all hover:shadow-xl hover:shadow-primary/5 group h-full">
+                            <p className="text-muted-foreground text-[10px] uppercase font-black tracking-widest mb-1 group-hover:text-primary transition-colors">{c.label}</p>
+                            <h3 className={`text-4xl font-black ${c.color} tracking-tighter`}>{c.value}</h3>
+                            <p className="text-xs text-muted-foreground mt-2 font-medium bg-muted/50 py-1 px-2 rounded-lg inline-block">{c.sub}</p>
+                        </div>
+                    );
+
+                    if (c.label === "Revenue (LKR)") {
+                        return (
+                            <button
+                                key={i}
+                                onClick={() => setIsRevenueModalOpen(true)}
+                                className="text-left w-full transition-transform active:scale-95"
+                            >
+                                {CardContent}
+                            </button>
+                        );
+                    }
+
+                    return (
+                        <div key={i}>
+                            {CardContent}
+                        </div>
+                    );
+                })}
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 pb-10">
@@ -267,6 +293,87 @@ export default function DashboardClient({ bookings, serviceCount }: { bookings: 
                 </div>
 
             </div>
+
+            {/* Revenue Audit Modal */}
+            {isRevenueModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+                    <div className="bg-card border border-border w-full max-w-4xl max-h-[85vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+                        {/* Modal Header */}
+                        <div className="p-6 border-b border-border flex justify-between items-center bg-muted/20">
+                            <div>
+                                <h2 className="text-2xl font-black text-foreground tracking-tight">Revenue Audit History</h2>
+                                <p className="text-muted-foreground text-sm font-medium">Detailed breakdown of all completed jobs</p>
+                            </div>
+                            <button
+                                onClick={() => setIsRevenueModalOpen(false)}
+                                className="p-2 hover:bg-secondary rounded-xl transition-colors"
+                            >
+                                <X className="w-6 h-6 text-muted-foreground" />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="flex-grow overflow-y-auto p-6">
+                            <div className="space-y-4">
+                                {completedJobs.map((b, i) => (
+                                    <div key={i} className="bg-secondary/20 border border-border/50 rounded-2xl p-4 hover:border-primary/30 transition-all">
+                                        <div className="flex flex-col md:flex-row justify-between gap-4">
+                                            <div className="space-y-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="bg-green-500/10 text-green-600 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider border border-green-500/20">COMPLETED</span>
+                                                    <span className="text-xs font-bold text-muted-foreground">{b["Date"]} • {b["Booking Number"]}</span>
+                                                </div>
+                                                <h4 className="font-black text-foreground text-lg">{b["Customer"]}</h4>
+                                                <p className="text-xs text-muted-foreground italic line-clamp-1">{b["Services"]}</p>
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 bg-muted/30 p-4 rounded-xl border border-border/30">
+                                                <div className="text-center md:text-left">
+                                                    <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mb-1">Labor (Price Given)</p>
+                                                    <p className="font-bold text-sm text-foreground">LKR {parseFloat(b["Original Labor"] || "0").toLocaleString()}</p>
+                                                </div>
+                                                <div className="text-center md:text-left">
+                                                    <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mb-1">Discount</p>
+                                                    <p className="font-bold text-sm text-red-500">
+                                                        {b["Discount Type"] === 'percentage' ? `${b["Discount Value"]}%` : `LKR ${parseFloat(b["Discount Value"] || "0").toLocaleString()}`}
+                                                    </p>
+                                                </div>
+                                                <div className="text-center md:text-left">
+                                                    <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mb-1">Parts & Materials</p>
+                                                    <p className="font-bold text-sm text-blue-600">LKR {parseFloat(b["Parts Total"] || "0").toLocaleString()}</p>
+                                                </div>
+                                                <div className="text-center md:text-right">
+                                                    <p className="text-[9px] text-primary font-black uppercase tracking-widest mb-1">Final Revenue</p>
+                                                    <p className="font-black text-lg text-primary tracking-tighter leading-none">LKR {parseFloat(b["Final Total"] || "0").toLocaleString()}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                {completedJobs.length === 0 && (
+                                    <div className="text-center py-20">
+                                        <Receipt className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
+                                        <p className="text-muted-foreground font-medium">No completed revenue records yet.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-6 border-t border-border bg-muted/20 flex flex-col md:flex-row justify-between items-center gap-4">
+                            <div>
+                                <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest mb-1">Cumulative Total Revenue</p>
+                                <h3 className="text-3xl font-black text-green-600 tracking-tighter">LKR {completedRevenue.toLocaleString()}</h3>
+                            </div>
+                            <button
+                                onClick={() => setIsRevenueModalOpen(false)}
+                                className="w-full md:w-auto px-8 py-3 bg-foreground text-background rounded-xl font-black hover:scale-105 transition-transform"
+                            >
+                                CLOSE AUDIT
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

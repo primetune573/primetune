@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Clock, CalendarIcon, ShieldAlert, CheckCircle2, PhoneCall, MessageCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
@@ -67,10 +67,12 @@ export default function ServiceDetailsClient({ service }: { service: any }) {
     const [carBrand, setCarBrand] = useState("");
     const [carModel, setCarModel] = useState("");
     const [carYear, setCarYear] = useState("");
+    const [carPlate, setCarPlate] = useState("");
     const [notes, setNotes] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState<string | null>(null);
+    const [isPending, startTransition] = useTransition();
 
     const fetchSlots = useCallback(async (date: string) => {
         setSlotsLoading(true);
@@ -91,7 +93,7 @@ export default function ServiceDetailsClient({ service }: { service: any }) {
         if (val) fetchSlots(val);
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setError("");
 
@@ -103,47 +105,53 @@ export default function ServiceDetailsClient({ service }: { service: any }) {
             setError("Please enter a valid phone number (9-10 digits).");
             return;
         }
-        if (!carBrand || !carModel || !carYear) {
-            setError("Please enter all vehicle details.");
+        if (!carBrand || !carModel || !carYear || !carPlate) {
+            setError("Please enter all vehicle details including number plate.");
             return;
         }
 
         setSubmitting(true);
-        try {
-            const res = await submitBooking({
-                customer_name: name,
-                customer_phone: phone,
-                car_brand: carBrand,
-                car_model: carModel,
-                car_year: carYear,
-                service_id: service.id,
-                service_name: service.name,
-                booking_date: dateStr,
-                booking_time: selectedSlot,
-                duration_hours: service.duration_hours || 1,
-                total_price: service.price || 0,
-                notes,
-            });
+        startTransition(async () => {
+            try {
+                const res = await submitBooking({
+                    customer_name: name,
+                    customer_phone: phone,
+                    car_brand: carBrand,
+                    car_model: carModel,
+                    car_year: carYear,
+                    service_id: service.id,
+                    service_name: service.name,
+                    booking_date: dateStr,
+                    booking_time: selectedSlot,
+                    duration_hours: service.duration_hours || 1,
+                    total_price: service.price || 0,
+                    notes,
+                    car_plate: carPlate,
+                });
 
-            if (!res.success) {
-                if (res.error === "EXCEL_FILE_OPEN") {
-                    setError("⚠️ The bookings Excel file is currently open. Please close it and try again.");
-                } else {
-                    setError(res.error || "Something went wrong. Please try again.");
+                if (!res?.success) {
+                    if (res?.error === "EXCEL_FILE_OPEN") {
+                        setError("⚠️ The bookings Excel file is currently open. Please close it and try again.");
+                    } else {
+                        setError(res?.error || "Something went wrong. Please try again.");
+                    }
+                    return;
                 }
-                return;
+
+                // Success: open WhatsApp
+                const slotObj = availableSlots.find((s: any) => s.time === selectedSlot);
+                const timeRange = slotObj?.range || selectedSlot;
+                const waMsg = `*New Booking — PrimeTune Automotive*\n\n*Booking ID:* ${res.booking_number}\n*Service:* ${service.name}\n*Date:* ${dateStr}\n*Time:* ${timeRange}\n\n*Customer:* ${name}\n*Phone:* ${phone}\n*Vehicle:* ${carBrand} ${carModel} (${carYear})\n*Plate:* ${carPlate}\n\n*Total:* LKR ${service.price?.toLocaleString()}\n\n_Notes: ${notes || "None"}_`;
+                const waUrl = `https://wa.me/94775056573?text=${encodeURIComponent(waMsg)}`;
+
+                // Use location.assign for maximum iOS/Android compatibility in async contexts
+                window.location.assign(waUrl);
+
+                setSuccess(res.booking_number || "Booking confirmed!");
+            } finally {
+                setSubmitting(false);
             }
-
-            // Success: open WhatsApp
-            const slotObj = availableSlots.find(s => s.time === selectedSlot);
-            const timeRange = slotObj?.range || selectedSlot;
-            const waMsg = `*New Booking — PrimeTune Automotive*\n\n*Booking ID:* ${res.booking_number}\n*Service:* ${service.name}\n*Date:* ${dateStr}\n*Time:* ${timeRange}\n\n*Customer:* ${name}\n*Phone:* ${phone}\n*Vehicle:* ${carBrand} ${carModel} (${carYear})\n\n*Total:* LKR ${service.price?.toLocaleString()}\n\n_Notes: ${notes || "None"}_`;
-            window.open(`https://wa.me/94775056573?text=${encodeURIComponent(waMsg)}`, "_blank");
-
-            setSuccess(res.booking_number || "Booking confirmed!");
-        } finally {
-            setSubmitting(false);
-        }
+        });
     };
 
     return (
@@ -246,11 +254,20 @@ export default function ServiceDetailsClient({ service }: { service: any }) {
                                         </div>
                                     </div>
                                     <p className="text-sm text-muted-foreground leading-relaxed">
-                                        WhatsApp has been opened with your booking details. Our lead mechanic will confirm your appointment shortly.
+                                        WhatsApp has been opened with your booking details. If it didn't open automatically, click the button below:
                                     </p>
-                                    <Link href="/services" className="w-full inline-flex items-center justify-center gap-2 bg-primary hover:bg-red-700 text-white py-4 rounded-2xl font-black transition-all hover:scale-105 active:scale-95 shadow-xl shadow-primary/20">
-                                        Book Another Service
-                                    </Link>
+                                    <div className="space-y-3">
+                                        <a
+                                            href={`https://wa.me/94775056573?text=${encodeURIComponent(`*Booking ID:* ${success}\nI'm following up on my booking.`)}`}
+                                            target="_blank"
+                                            className="w-full inline-flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#128C7E] text-white py-4 rounded-2xl font-black transition-all shadow-xl shadow-green-500/20"
+                                        >
+                                            <MessageCircle className="w-5 h-5" /> Open WhatsApp Manually
+                                        </a>
+                                        <Link href="/services" className="w-full inline-flex items-center justify-center gap-2 bg-muted hover:bg-muted/80 text-muted-foreground py-4 rounded-2xl font-black transition-all">
+                                            Return to Services
+                                        </Link>
+                                    </div>
                                 </div>
                             ) : (
                                 <>
@@ -369,7 +386,10 @@ export default function ServiceDetailsClient({ service }: { service: any }) {
                                                 <input required value={carBrand} onChange={e => setCarBrand(e.target.value)} placeholder="Car Brand *" className="bg-secondary/30 border border-border rounded-2xl px-5 py-3.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/30 outline-none transition-shadow" />
                                                 <input required value={carModel} onChange={e => setCarModel(e.target.value)} placeholder="Model *" className="bg-secondary/30 border border-border rounded-2xl px-5 py-3.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/30 outline-none transition-shadow" />
                                             </div>
-                                            <input required value={carYear} onChange={e => setCarYear(e.target.value)} placeholder="Manufacturing Year *" className="w-full bg-secondary/30 border border-border rounded-2xl px-5 py-3.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/30 outline-none transition-shadow" />
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <input required value={carYear} onChange={e => setCarYear(e.target.value)} placeholder="Manufacturing Year *" className="bg-secondary/30 border border-border rounded-2xl px-5 py-3.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/30 outline-none transition-shadow" />
+                                                <input required value={carPlate} onChange={e => setCarPlate(e.target.value)} placeholder="Number Plate *" className="bg-secondary/30 border border-border rounded-2xl px-5 py-3.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/30 outline-none transition-shadow" />
+                                            </div>
                                             <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Briefly describe your vehicle issues..." rows={2} className="w-full bg-secondary/30 border border-border rounded-2xl px-5 py-3.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/30 outline-none resize-none transition-shadow" />
                                         </div>
 

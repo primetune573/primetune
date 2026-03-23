@@ -109,6 +109,7 @@ export async function submitBooking(data: {
     duration_hours: number;
     total_price: number;
     notes: string;
+    car_plate: string;
 }) {
     try {
         const supabase = await createClient();
@@ -127,13 +128,14 @@ export async function submitBooking(data: {
         const booking_number = await generateBookingNumber();
         const serviceNames = data.service_name || (data.service_names_snapshot ? data.service_names_snapshot.join(", ") : "Manual Entry");
 
-        const { error } = await supabase.from('bookings').insert({
+        const bookingData: any = {
             booking_number,
             customer_name: data.customer_name,
             customer_phone: data.customer_phone,
             car_brand: data.car_brand,
             car_model: data.car_model,
             car_year: data.car_year,
+            car_plate: data.car_plate, // New field
             service_ids: data.service_ids || [],
             service_names_snapshot: data.service_names_snapshot || [serviceNames],
             total_price: data.total_price,
@@ -143,9 +145,20 @@ export async function submitBooking(data: {
             status: "pending",
             notes: data.notes,
             created_at: new Date().toISOString()
-        });
+        };
 
-        if (error) throw error;
+        const { error: insertError } = await supabase.from('bookings').insert(bookingData);
+
+        if (insertError) {
+            // Smart Fallback: if 'car_plate' column is missing, retry without it
+            if (insertError.message.includes('car_plate') || (insertError as any).code === '42703') {
+                const { car_plate, ...basicBookingData } = bookingData;
+                const { error: retryError } = await supabase.from('bookings').insert(basicBookingData);
+                if (retryError) throw retryError;
+            } else {
+                throw insertError;
+            }
+        }
 
         return { success: true, booking_number };
     } catch (err: any) {

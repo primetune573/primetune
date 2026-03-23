@@ -1,16 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { Plus, Trash2, Calendar, Clock, AlertCircle, Loader2, CheckCircle2, ShieldAlert } from "lucide-react";
 import { getAvailabilityBlocks, addAvailabilityBlock, deleteAvailabilityBlock } from "@/app/actions/admin";
 import { MotionDiv, fadeIn } from "@/components/animated/MotionDiv";
 
-export default function AvailabilityManagement() {
-    const [blocks, setBlocks] = useState<any>({ holidays: [], blocked_slots: [] });
-    const [loading, setLoading] = useState(true);
+export default function AvailabilityManagement({ initialData }: { initialData?: any }) {
+    const [blocks, setBlocks] = useState<any>(initialData || { holidays: [], blocked_slots: [] });
+    const [loading, setLoading] = useState(!initialData);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
+    const [isPending, startTransition] = useTransition();
 
     // Form state
     const [type, setType] = useState<"full-day" | "partial">("full-day");
@@ -27,10 +28,12 @@ export default function AvailabilityManagement() {
     };
 
     useEffect(() => {
-        fetchBlocks();
-    }, []);
+        if (!initialData) {
+            fetchBlocks();
+        }
+    }, [initialData]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setError("");
         setSuccess("");
@@ -46,33 +49,37 @@ export default function AvailabilityManagement() {
         }
 
         setSubmitting(true);
-        const res = await addAvailabilityBlock({
-            type,
-            date,
-            start_hour: type === "partial" ? parseInt(startHour) : 0,
-            end_hour: type === "partial" ? parseInt(endHour) : 24,
-            reason
-        });
+        startTransition(async () => {
+            const res = await addAvailabilityBlock({
+                type,
+                date,
+                start_hour: type === "partial" ? parseInt(startHour) : 0,
+                end_hour: type === "partial" ? parseInt(endHour) : 24,
+                reason
+            });
 
-        if (res.success) {
-            setSuccess("Block added successfully!");
-            setReason("");
-            fetchBlocks();
-        } else {
-            setError(res.error || "Failed to add block.");
-        }
-        setSubmitting(false);
+            if (res?.success) {
+                setSuccess("Block added successfully!");
+                setReason("");
+                fetchBlocks();
+            } else {
+                setError(res?.error || "Failed to add block.");
+            }
+            setSubmitting(false);
+        });
     };
 
-    const handleDelete = async (id: string, blockType: "full-day" | "partial") => {
+    const handleDelete = (id: string, blockType: "full-day" | "partial") => {
         if (!confirm("Are you sure you want to remove this block?")) return;
 
-        const res = await deleteAvailabilityBlock(id, blockType);
-        if (res.success) {
-            fetchBlocks();
-        } else {
-            alert("Failed to delete block.");
-        }
+        startTransition(async () => {
+            const res = await deleteAvailabilityBlock(id, blockType);
+            if (res?.success) {
+                fetchBlocks();
+            } else {
+                alert("Failed to delete block.");
+            }
+        });
     };
 
     const formatHour = (h: number) => {

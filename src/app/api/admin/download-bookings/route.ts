@@ -29,8 +29,13 @@ export async function GET() {
             { header: "Customer", key: "customer_name", width: 25 },
             { header: "Phone", key: "customer_phone", width: 15 },
             { header: "Vehicle", key: "vehicle", width: 30 },
+            { header: "Plate", key: "car_plate", width: 12 },
             { header: "Services", key: "services", width: 40 },
-            { header: "Total Price", key: "total_price", width: 15 },
+            { header: "Original Labor", key: "original_labor_price", width: 15 },
+            { header: "Discount Type", key: "discount_type", width: 15 },
+            { header: "Discount Value", key: "discount_value", width: 15 },
+            { header: "Parts Total", key: "parts_total", width: 15 },
+            { header: "Final Total", key: "final_total", width: 15 },
             { header: "Duration (hrs)", key: "duration_hours", width: 15 },
             { header: "Status", key: "status", width: 12 },
             { header: "Cancellation Reason", key: "cancellation_reason", width: 30 },
@@ -51,8 +56,13 @@ export async function GET() {
                 customer_name: b.customer_name,
                 customer_phone: b.customer_phone,
                 vehicle: `${b.car_brand} ${b.car_model} (${b.car_year})`,
+                car_plate: b.car_plate || "N/A",
                 services: b.service_names_snapshot?.join(", "),
-                total_price: b.total_price,
+                original_labor_price: b.original_labor_price || b.total_price,
+                discount_type: b.discount_type || "none",
+                discount_value: b.discount_value || 0,
+                parts_total: b.parts_total || 0,
+                final_total: b.final_total || b.total_price,
                 duration_hours: b.duration_hours,
                 status: b.status,
                 cancellation_reason: b.cancellation_reason,
@@ -60,10 +70,13 @@ export async function GET() {
                 created_at: b.created_at,
             });
 
-            // If cancelled, make row red
-            if (b.status === 'cancelled') {
+            // If cancelled, make row bold red
+            if (b.status?.toLowerCase() === 'cancelled') {
                 row.eachCell(cell => {
-                    cell.font = { color: { argb: 'FFCC0000' } };
+                    cell.font = {
+                        color: { argb: 'FFFF0000' }, // Pure Red
+                        bold: true
+                    };
                 });
             }
         });

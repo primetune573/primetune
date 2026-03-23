@@ -12,7 +12,6 @@ async function getServices() {
         .order('name');
 
     if (error) {
-        console.error("Error fetching services:", error);
         return [];
     }
 

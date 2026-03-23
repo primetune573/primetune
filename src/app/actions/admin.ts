@@ -11,7 +11,16 @@ export async function adminUpdateBookingStatus(
     _id: string, // Kept for legacy compatibility
     bookingNumber: string,
     status: "pending" | "confirmed" | "completed" | "cancelled",
-    cancellationReason?: string
+    cancellationReason?: string,
+    completionData?: {
+        original_labor_price: number;
+        discount_type: 'amount' | 'percentage' | 'none';
+        discount_value: number;
+        final_labor_price: number;
+        parts_total: number;
+        final_total: number;
+        extra_items: any[];
+    }
 ) {
     if (!(await isAdmin())) throw new Error("Unauthorized");
     try {
@@ -28,14 +37,42 @@ export async function adminUpdateBookingStatus(
 
         if (status === "completed") {
             updateData.completed_at = new Date().toISOString();
+            if (completionData) {
+                updateData.original_labor_price = completionData.original_labor_price;
+                updateData.discount_type = completionData.discount_type;
+                updateData.discount_value = completionData.discount_value;
+                updateData.final_labor_price = completionData.final_labor_price;
+                updateData.parts_total = completionData.parts_total;
+                updateData.final_total = completionData.final_total;
+                updateData.extra_items = completionData.extra_items;
+                updateData.total_price = completionData.final_total;
+            }
         }
 
-        const { error } = await supabase
+        const { error: updateError } = await supabase
             .from('bookings')
             .update(updateData)
             .eq('booking_number', bookingNumber);
 
-        if (error) throw error;
+        if (updateError) {
+            // Smart Fallback: if columns are missing, retry basic update
+            if (updateError.message.includes('car_plate') || updateError.message.includes('extra_items') || (updateError as any).code === '42703') {
+                const {
+                    original_labor_price, discount_type, discount_value,
+                    final_labor_price, parts_total, final_total,
+                    extra_items, car_plate, ...basicUpdateData
+                } = updateData as any;
+
+                const { error: retryError } = await supabase
+                    .from('bookings')
+                    .update(basicUpdateData)
+                    .eq('booking_number', bookingNumber);
+
+                if (retryError) throw retryError;
+            } else {
+                throw updateError;
+            }
+        }
 
         revalidatePath("/admin/bookings");
         revalidatePath("/admin");
@@ -278,16 +315,78 @@ export async function deleteAvailabilityBlock(id: string, type: "full-day" | "pa
 }
 
 /** Returns all bookings for the admin dashboard and calendar */
-export async function getAllBookings() {
-    if (!(await isAdmin())) return [];
+export async function getAllBookings(skipAuth = false) {
+    if (!skipAuth && !(await isAdmin())) return [];
     try {
         const supabase = await createClient();
-        const { data, error } = await supabase
+
+        // Try selecting all fields including new advanced ones
+        let data: any[] | null = null;
+        const { data: advData, error: advError } = await supabase
             .from('bookings')
-            .select('*')
+            .select(`
+                id,
+                booking_number,
+                customer_name,
+                customer_phone,
+                customer_email,
+                booking_date,
+                booking_time,
+                car_brand,
+                car_model,
+                car_year,
+                car_plate,
+                service_names_snapshot,
+                total_price,
+                duration_hours,
+                status,
+                notes,
+                original_labor_price,
+                discount_type,
+                discount_value,
+                final_labor_price,
+                parts_total,
+                final_total,
+                extra_items,
+                cancellation_reason,
+                created_at,
+                updated_at
+            `)
             .order('created_at', { ascending: false });
 
-        if (error) throw error;
+        if (advError) {
+            console.warn("Advanced columns missing, falling back to basic query.");
+            const { data: basicData, error: basicError } = await supabase
+                .from('bookings')
+                .select(`
+                    id,
+                    booking_number,
+                    customer_name,
+                    customer_phone,
+                    customer_email,
+                    booking_date,
+                    booking_time,
+                    car_brand,
+                    car_model,
+                    car_year,
+                    service_names_snapshot,
+                    total_price,
+                    duration_hours,
+                    status,
+                    notes,
+                    cancellation_reason,
+                    created_at,
+                    updated_at
+                `)
+                .order('created_at', { ascending: false });
+
+            if (basicError) throw basicError;
+            data = basicData;
+        } else {
+            data = advData;
+        }
+
+        if (!data) return [];
 
         // Map Supabase fields back to the "Excel-style" keys the frontend expects
         return data.map(b => ({
@@ -298,11 +397,19 @@ export async function getAllBookings() {
             "Phone": b.customer_phone,
             "Email": b.customer_email,
             "Vehicle": `${b.car_brand} ${b.car_model} (${b.car_year})`,
+            "Plate": b.car_plate || "",
             "Services": b.service_names_snapshot?.join(", "),
             "Total Price": b.total_price,
             "Duration (hrs)": b.duration_hours,
             "Status": b.status,
             "Notes": b.notes,
+            "Original Labor": b.original_labor_price || b.total_price,
+            "Discount Type": b.discount_type || 'none',
+            "Discount Value": b.discount_value || 0,
+            "Final Labor": b.final_labor_price || b.total_price,
+            "Parts Total": b.parts_total || 0,
+            "Final Total": b.final_total || b.total_price,
+            "Extra Items": b.extra_items || [],
             "Cancellation Reason": b.cancellation_reason,
             "Created At": b.created_at,
             "Updated At": b.updated_at
